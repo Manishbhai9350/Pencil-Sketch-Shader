@@ -14,6 +14,7 @@
   "dependencies": {
     "postprocessing": "^6.37.6",
     "three": "^0.178.0",
+    "three-custom-shader-material": "^6.4.0",
     "vite-plugin-glsl": "^1.5.1"
   }
 }
