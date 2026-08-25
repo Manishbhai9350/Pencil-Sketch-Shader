@@ -16,7 +16,9 @@ import { PlaneGeometry } from "three";
 import { MeshStandardMaterial } from "three";
 import { DirectionalLight } from "three";
 import { FogExp2 } from "three";
-import CSM from "three-custom-shader-material/vanilla";
+import { GetToonMaterial } from "./material/Toon";
+import { MeshToonMaterial } from "three";
+import { CylinderGeometry } from "three";
 
 const { PI } = Math;
 
@@ -70,6 +72,8 @@ const { width: SceneWidth, height: SceneHeight } = GetSceneBounds(
 scene.background = new Color("#3a3a3a");
 scene.fog = new FogExp2("#3a3a3a", 0.1);
 
+const InkMap = TextureLoader.load("/textures/ink.jpg");
+
 const D1 = new DirectionalLight(0xffffff, 2);
 
 D1.castShadow = true;
@@ -77,72 +81,7 @@ D1.position.set(1, 1, 1);
 
 scene.add(D1);
 
-const PotMaterial = new CSM({
-  baseMaterial: MeshStandardMaterial,
-  side: THREE.DoubleSide,
-  color: "#2d51f3",
-  vertexShader: /* glsl */ `
-    varying vec3 csm_v_normal;
-    varying vec2 vUv;
-
-    void main(){
-
-
-      csm_v_normal = normalize((modelMatrix * vec4(csm_Normal,.0)).xyz);
-      // csm_v_normal = normalize(csm_Normal);
-
-      vUv = uv;
-
-    }
-  
-  `,
-  fragmentShader: /* glsl */ `
-  varying vec3 csm_v_normal;
-  varying vec2 vUv;
-
-  #define Threshold .7
-
-  float noise(vec2 p) {
-    return fract(
-        sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453
-    );
-  }
-
-  float StepNode (float x) {
-    float v = floor(x * 4.0) / 4.0;
-    float f = v * .9 + noise(vec2(x,x) * 100.0) * .1;
-
-    return v;
-  }
-
-  float CalculateLightIntensity(vec3 light, vec3 normal, float intensity){
-    return max(.0,dot(normal,light) * intensity) * Threshold + (1.0 - Threshold);
-  }
-
-  void main(){
-    vec3 LightDir = vec3(1.0,1.0,1.0);
-  
-    vec3 L = normalize(LightDir);
-    vec3 N = normalize(csm_v_normal);
-
-  
-    float I = CalculateLightIntensity(L,N,1.5);
-
-    float n = noise(vUv * .01);
-
-    float sketchIntensity = I + (n - 0.5) * 0.05;
-
-    float SteppedI = StepNode(sketchIntensity);
-
-    vec3 FinalColor = csm_DiffuseColor.rgb * SteppedI;
-  
-    csm_FragColor = vec4(vec3(FinalColor),1.0);
-
-  }
-
-  
-  `,
-});
+const PotMaterial = GetToonMaterial({},{ InkMap });
 
 const Pot = new THREE.Mesh(new TeapotGeometry(1), PotMaterial);
 
@@ -150,15 +89,34 @@ Pot.castShadow = true;
 
 const Ground = new Mesh(
   new PlaneGeometry(100, 100),
-  new MeshStandardMaterial({
-    color: "#ffffff",
-  }),
+  GetToonMaterial({
+    color:'#9b9090',
+    baseMaterial: MeshBasicMaterial
+  },{ InkMap, ink:false })
 );
+
+const MetaBallMaterial = GetToonMaterial({ color:'yellow' },{ InkMap });
+
+const MetaBall = new Mesh(
+  new IcosahedronGeometry(1,10),
+  // MetaBallMaterial
+  new MeshToonMaterial({ color:'red' })
+)
+
+const Cylinder = new Mesh(
+  new CylinderGeometry(1,1,2,30,20),
+  GetToonMaterial({ color:"limegreen" },{InkMap})
+)
+
+Cylinder.position.x = 2;
+
+MetaBall.position.x = -3
+MetaBall.position.z = 2
 
 Ground.rotation.x = -Math.PI / 2;
 Ground.position.y = -1;
 // Ground.receiveShadow = true;
-scene.add(Ground);
+scene.add(Ground,MetaBall,Cylinder);
 
 // Pot.material.onBeforeCompile = (shader) => {
 //   // shader.vertexShader = vertexShader;
