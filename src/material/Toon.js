@@ -1,15 +1,18 @@
 import CSM from "three-custom-shader-material/vanilla";
 import { DoubleSide, Uniform } from "three";
 import { MeshStandardMaterial } from "three";
+import { Color } from "three";
+import { Vector3 } from "three";
 
-export const GetToonMaterial = (config = {}, { InkMap, ink = false }) => {
+const BasicToonMaterial = (config = {}, { InkMap, ink = false }) => {
   return new CSM({
     baseMaterial: MeshStandardMaterial,
     side: DoubleSide,
     color: "#2d51f3",
     uniforms: {
       uInkMap: new Uniform(InkMap),
-      uInk: new Uniform(ink ? 1 : 0)
+      uInk: new Uniform(ink ? 1 : 0),
+      uColorSteps: new Uniform(3.3),
     },
     vertexShader: /* glsl */ `
     varying vec3 csm_v_normal;
@@ -34,9 +37,10 @@ export const GetToonMaterial = (config = {}, { InkMap, ink = false }) => {
   varying vec2 vUv;
 
   uniform float uInk;
+  uniform float uColorSteps;
   uniform sampler2D uInkMap;
 
-  #define Threshold .7
+  #define Threshold .5
 
   float noise(vec2 p) {
     return fract(
@@ -45,7 +49,7 @@ export const GetToonMaterial = (config = {}, { InkMap, ink = false }) => {
   }
 
   float StepNode (float x) {
-    float v = floor(x * 2.5) / 2.66;
+    float v = floor(x * uColorSteps) / uColorSteps;
     float f = v * (1.0 - .01) + noise(vec2(x,x) * 100.0) * .01;
 
     return v;
@@ -80,9 +84,9 @@ export const GetToonMaterial = (config = {}, { InkMap, ink = false }) => {
 
     vec3 color = csm_DiffuseColor.rgb;
 
-    if(SteppedI * 2.5 >= 2.4) {
-        color *= 1.4;
-    }
+    // if(SteppedI * 2.5 >= 2.4) {
+    //     color *= 1.4;
+    // }
 
     vec3 FinalColor = color * SteppedI;
   
@@ -107,4 +111,43 @@ export const GetToonMaterial = (config = {}, { InkMap, ink = false }) => {
   `,
     ...config,
   });
+};
+
+const GetInjectedToonMaterial = (config) => {
+  const material = new MeshStandardMaterial({
+    color: config?.color || "white",
+    side: DoubleSide
+  });
+
+  let anime = false;
+
+  if (anime) {
+    material.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <opaque_fragment>",
+        /* glsl */ `
+  
+      float threshold = .1;
+      float steps = 10.0;
+      float intensity = max(outgoingLight.r, max(outgoingLight.g, outgoingLight.b));
+      intensity = intensity * (1.0 - threshold) + threshold;
+      intensity = floor(intensity * steps) / steps;
+
+      vec3 toonColor = diffuseColor.rgb * intensity;
+      gl_FragColor = vec4(toonColor, diffuseColor.a);
+      
+      #include <tonemapping_fragment>
+      #include <colorspace_fragment>
+    `,
+      );
+    };
+  }
+
+  return material;
+};
+
+export const GetToonMaterial = (config = {}, uniforms = {}) => {
+  // return BasicToonMaterial(config, uniforms);
+
+  return GetInjectedToonMaterial(config);
 };

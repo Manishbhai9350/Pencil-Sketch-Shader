@@ -6,7 +6,12 @@ import fragmentShader from "./shaders/fragment.glsl";
 import vertexShader from "./shaders/vertex.glsl";
 import { Clock } from "three";
 import { GetSceneBounds } from "./utils";
-import { OrbitControls, TeapotGeometry } from "three/examples/jsm/Addons.js";
+import {
+  EffectComposer,
+  OrbitControls,
+  RenderPass,
+  TeapotGeometry,
+} from "three/examples/jsm/Addons.js";
 import { Mesh } from "three";
 import { BoxGeometry } from "three";
 import { MeshBasicMaterial } from "three";
@@ -18,9 +23,16 @@ import { DirectionalLight } from "three";
 import { FogExp2 } from "three";
 import { GetToonMaterial } from "./material/Toon";
 import { MeshToonMaterial } from "three";
-import { CylinderGeometry } from "three";
+import { TorusKnotGeometry } from "three";
+import { AmbientLight } from "three";
+import { Pane } from "tweakpane";
+import { GetToonPass } from "./postprocessing/ToonPass";
 
 const { PI } = Math;
+
+const pane = new Pane();
+
+pane.hidden = true;
 
 const canvas = document.querySelector("canvas");
 
@@ -36,6 +48,7 @@ const renderer = new THREE.WebGLRenderer({
 });
 
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const camera = new THREE.PerspectiveCamera(
   75,
@@ -43,7 +56,8 @@ const camera = new THREE.PerspectiveCamera(
   1,
   1000,
 );
-camera.position.z = 5;
+camera.position.z = 7;
+camera.position.y = 4;
 
 const Manager = new THREE.LoadingManager();
 const Draco = new DRACOLoader(Manager);
@@ -69,19 +83,12 @@ const { width: SceneWidth, height: SceneHeight } = GetSceneBounds(
 //   },
 // });
 
-scene.background = new Color("#3a3a3a");
-scene.fog = new FogExp2("#3a3a3a", 0.1);
+scene.background = new Color("#ffffff");
+// scene.fog = new FogExp2("#2a2727", 0);
 
 const InkMap = TextureLoader.load("/textures/ink.jpg");
 
-const D1 = new DirectionalLight(0xffffff, 2);
-
-D1.castShadow = true;
-D1.position.set(1, 1, 1);
-
-scene.add(D1);
-
-const PotMaterial = GetToonMaterial({},{ InkMap });
+const PotMaterial = GetToonMaterial({ color:'skyblue' }, { InkMap });
 
 const Pot = new THREE.Mesh(new TeapotGeometry(1), PotMaterial);
 
@@ -89,43 +96,53 @@ Pot.castShadow = true;
 
 const Ground = new Mesh(
   new PlaneGeometry(100, 100),
-  GetToonMaterial({
-    color:'#9b9090',
-    baseMaterial: MeshBasicMaterial
-  },{ InkMap, ink:false })
+  new MeshStandardMaterial({
+    color: "white",
+  }),
 );
 
-const MetaBallMaterial = GetToonMaterial({ color:'yellow' },{ InkMap });
+scene.add(new AmbientLight(0xffffff, 0.3));
+const D = new DirectionalLight(0xffffff, 2.5);
+D.position.set(10, 10, 10);
+D.castShadow = true;
+scene.add(D);
 
-const MetaBall = new Mesh(
-  new IcosahedronGeometry(1,10),
-  // MetaBallMaterial
-  new MeshToonMaterial({ color:'red' })
-)
+const MetaBallMaterial = GetToonMaterial({ color: "yellow" }, { InkMap });
 
-const Cylinder = new Mesh(
-  new CylinderGeometry(1,1,2,30,20),
-  GetToonMaterial({ color:"limegreen" },{InkMap})
-)
+const MetaBall = new Mesh(new IcosahedronGeometry(1, 10), MetaBallMaterial);
 
-Cylinder.position.x = 2;
+const Torus = new Mesh(
+  new TorusKnotGeometry(1.3, 0.3, 100, 100),
+  GetToonMaterial({ color: "limegreen" }, { InkMap }),
+  // new MeshStandardMaterial({color:'red'})
+);
 
-MetaBall.position.x = -3
-MetaBall.position.z = 2
+Torus.position.set(0, 0, 0);
+Torus.castShadow = true;
+MetaBall.position.set(-4, 0, -2);
+MetaBall.castShadow = true;
+Pot.position.set(4, 0, -2);
+Pot.castShadow = true;
 
 Ground.rotation.x = -Math.PI / 2;
-Ground.position.y = -1;
-// Ground.receiveShadow = true;
-scene.add(Ground,MetaBall,Cylinder);
+Ground.position.y = -2.2;
+Ground.receiveShadow = true;
+scene.add(Ground, MetaBall, Torus, Pot);
 
-// Pot.material.onBeforeCompile = (shader) => {
-//   // shader.vertexShader = vertexShader;
-//   // shader.fragmentShader = fragmentShader;
-// };
+const Uniforms = {
+  uColorSteps: { value: 3.3 },
+};
 
-scene.add(Pot);
 
-console.log(Pot);
+// pane.addBinding(scene.fog, "color", { color: { type: "float" } });
+// pane.addBinding(scene.fog, "density", { min:0, max:.2, step:0.0001 });
+
+// Post Processing;
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+
+const ToonPass = GetToonPass(composer, pane);
 
 const clock = new Clock();
 let PrevTime = clock.getElapsedTime();
@@ -137,7 +154,13 @@ function Animate() {
 
   Pot.rotation.y += DT;
 
-  renderer.render(scene, camera);
+  Torus.rotation.x += DT;
+  Torus.rotation.y += DT;
+
+  ToonPass.update(DT);
+
+  // renderer.render(scene, camera);
+  composer.render(DT);
   requestAnimationFrame(Animate);
 }
 
@@ -148,6 +171,7 @@ function resize() {
   camera.updateProjectionMatrix();
   canvas.width = innerWidth;
   canvas.height = innerHeight;
+  composer.setSize(innerWidth, innerHeight)
   renderer.setSize(innerWidth, innerHeight);
 }
 
