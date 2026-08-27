@@ -3,18 +3,13 @@ import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { Pane } from "tweakpane";
+import { Vector2 } from "three";
+import { Uniform } from "three";
 
 const ToonPass = {
   uniforms: {
-    uAspect: { value: innerWidth/innerHeight },
-    uTime: { value:0 },
-    tDiffuse: { value: null },
-    uSteps: { value: 7.0 },
-    uContrast: { value: 1.1 },
-    uBrightness: { value: 1.4 },
-    uSaturation: { value: 0.7 },
-    noiseOpacity: { value:.26 },
-    noiseSize: { value: 100 },
+    tDiffuse: new Uniform(null),
+    uResolution: new Uniform(new Vector2(innerWidth, innerHeight)),
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -25,63 +20,68 @@ const ToonPass = {
   `,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
-    uniform float uTime;
-    uniform float uSteps;
-    uniform float uAspect;
-    uniform float uContrast;   // e.g. 1.4
-    uniform float uBrightness; // e.g. 1.15
-    uniform float uSaturation; // e.g. 1.2
-    uniform float noiseOpacity;
-    uniform float noiseSize;
+    uniform vec2 uResolution;
 
     varying vec2 vUv;
 
-    float Random(vec2 co) {
-        return fract(sin(dot(co.xy, vec2(12.9898, 78.233))) * 43758.5453);
-    }
+    vec3 luma = vec3(0.299,0.587,0.114);
+    
+    float Luminance(vec3 PixelColor){
+      return dot(PixelColor,luma);
+    } 
+
 
     void main() {
 
         vec2 uv = vUv;
 
-        // uv = abs(vec2(sin(uv.x * 3.1415926 * 2.0),sin(uv.y * 3.1415926 * 2.0)));
+        vec4 DiffuseColor = texture(tDiffuse,uv);
 
-        vec4 color = texture2D(tDiffuse, uv);
 
-        // Luminance
-        float lum = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
 
-        // Quantize (few steps = cel look)
-        float q = floor(lum * uSteps) / uSteps;
+        // Detecting Edges
+        vec2 texel = 1.0 / uResolution;
 
-        // Preserve hue: scale by ratio, not by absolute luminance
-        float ratio = (lum > 0.001) ? q / lum : 0.0;
-        vec3 stepped = color.rgb * ratio;
+        vec3 PixelRight = texture(tDiffuse,uv + texel * vec2(1.0,0.0) ).rgb;
+        vec3 PixelBottomRight = texture(tDiffuse,uv + texel * vec2(1.0,-1.0) ).rgb;
+        vec3 PixelBottom = texture(tDiffuse,uv + texel * vec2(.0,-1.0) ).rgb;
+        vec3 PixelBottomLeft = texture(tDiffuse,uv + texel * vec2(-1.0,-1.0) ).rgb;
+        vec3 PixelLeft = texture(tDiffuse,uv + texel * vec2(-1.0,0.0) ).rgb;
+        vec3 PixelTopLeft = texture(tDiffuse,uv + texel * vec2(-1.0,1.0) ).rgb;
+        vec3 PixelTop = texture(tDiffuse,uv + texel * vec2(0.0,1.0) ).rgb;
+        vec3 PixelTopRight = texture(tDiffuse,uv + texel * vec2(1.0,1.0) ).rgb;
+        
+        float RightLum = Luminance(PixelRight);
+        float BottomRightLum = Luminance(PixelBottomRight);
+        float BottomLum = Luminance(PixelBottom);
+        float BottomLeftLum = Luminance(PixelBottomLeft);
+        float LeftLum = Luminance(PixelLeft);
+        float TopLeftLum = Luminance(PixelTopLeft);
+        float TopLum = Luminance(PixelTop);
+        float TopRightLum = Luminance(PixelTopRight);
 
-        // Contrast: pull mids toward black/white
-        stepped = (stepped - 0.5) * uContrast + 0.5;
+        float Gx =
+        -TopLeftLum
+        + TopRightLum
+        - 2.0 * LeftLum
+        + 2.0 * RightLum
+        - BottomLeftLum
+        + BottomRightLum;
 
-        // Brightness lift
-        stepped *= uBrightness;
+        float Gy =
+        -TopLeftLum
+        - 2.0 * TopLum
+        - TopRightLum
+        + BottomLeftLum
+        + 2.0 * BottomLum
+        + BottomRightLum;
 
-        // Saturation boost (push away from gray)
-        float gray = dot(stepped, vec3(0.2126, 0.7152, 0.0722));
-        stepped = mix(vec3(gray), stepped, uSaturation);
-        vec3 FinalColor = clamp(stepped, 0.0, 1.0);
+        float edge = length(vec2(Gx, Gy));
+        edge = clamp(edge,0.0,1.0);
 
-        float R = Random(floor(uv * noiseSize * 10.) / (noiseSize * 10.0) + mod(uTime * .01,1.0));
+        float I = dot(DiffuseColor.rgb,vec3(0.2125, 0.7154, 0.0721));
 
-        FinalColor *= (1.0 - noiseOpacity) + R * noiseOpacity;
-
-        vec2 VignetteUV = uv * vec2(1.0,uAspect);
-        float Vignette = 1.0 - length(2.0 * (uv - vec2(.5))) / pow(2.0,.5);
-
-        Vignette = smoothstep(0.0,.8,Vignette);
-
-        FinalColor *= vec3(Vignette);
-
-        // Clamp
-        gl_FragColor = vec4(FinalColor, color.a);
+        gl_FragColor = vec4(edge,edge,edge,1.0);
     }   
   `,
 };
@@ -98,38 +98,11 @@ export const GetToonPass = (
   const toonPass = new ShaderPass(ToonPass);
   composer.addPass(toonPass);
 
-  const ToonFolder = pane.addFolder({ title:"Toon Setting", expanded:false })
+  const ToonFolder = pane.addFolder({ title: "Toon Setting", expanded: false });
 
-  ToonFolder.addBinding(toonPass.uniforms.uContrast, "value", {
-    min: 0,
-    max: 2,
-    step: 0.01,
-    label: "Contrast",
-  });
-  ToonFolder.addBinding(toonPass.uniforms.uBrightness, "value", {
-    min: 0,
-    max: 2,
-    step: 0.01,
-    label: "Brightness",
-  });
-  ToonFolder.addBinding(toonPass.uniforms.noiseOpacity, "value", {
-    min: 0,
-    max: 1,
-    step: 0.01,
-    label: "Noise Opacity",
-  });
-  ToonFolder.addBinding(toonPass.uniforms.noiseSize, "value", {
-    min: 0.1,
-    max: 200,
-    step: 0.01,
-    label: "Noise Size",
-  });
-
-  const Update = (DT = 0) => {
-    toonPass.uniforms.uTime.value += DT;
-  }
+  const Update = (DT = 0) => {};
 
   return {
-    update:Update
-  }
+    update: Update,
+  };
 };
