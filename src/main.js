@@ -2,8 +2,6 @@ import "./style.css";
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader";
-import fragmentShader from "./shaders/fragment.glsl";
-import vertexShader from "./shaders/vertex.glsl";
 import { Clock } from "three";
 import { GetSceneBounds } from "./utils";
 import {
@@ -32,7 +30,7 @@ const { PI } = Math;
 
 const pane = new Pane();
 
-pane.hidden = true;
+// pane.hidden = true;
 
 const canvas = document.querySelector("canvas");
 

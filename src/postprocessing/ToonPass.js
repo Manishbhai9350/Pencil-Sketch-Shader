@@ -5,10 +5,13 @@ import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { Pane } from "tweakpane";
 import { Vector2 } from "three";
 import { Uniform } from "three";
+import { Color } from "three";
 
 const ToonPass = {
   uniforms: {
     tDiffuse: new Uniform(null),
+    uColorA: new Uniform(new Color("#ede8e8")) /* Environment Color */,
+    uColorB: new Uniform(new Color("#1d1ac7")) /* Border Color */,
     uResolution: new Uniform(new Vector2(innerWidth, innerHeight)),
   },
   vertexShader: /* glsl */ `
@@ -21,6 +24,8 @@ const ToonPass = {
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
     uniform vec2 uResolution;
+    uniform vec3 uColorA;
+    uniform vec3 uColorB;
 
     varying vec2 vUv;
 
@@ -76,12 +81,18 @@ const ToonPass = {
         + 2.0 * BottomLum
         + BottomRightLum;
 
+        float Threshold = .3;
+
         float edge = length(vec2(Gx, Gy));
         edge = clamp(edge,0.0,1.0);
 
+        float EdgeMask = smoothstep(.1,.3,edge);
+
+        vec3 FinalColor = mix(uColorA,uColorB,EdgeMask);
+
         float I = dot(DiffuseColor.rgb,vec3(0.2125, 0.7154, 0.0721));
 
-        gl_FragColor = vec4(edge,edge,edge,1.0);
+        gl_FragColor = vec4(vec3(FinalColor),1.0);
     }   
   `,
 };
@@ -98,7 +109,16 @@ export const GetToonPass = (
   const toonPass = new ShaderPass(ToonPass);
   composer.addPass(toonPass);
 
-  const ToonFolder = pane.addFolder({ title: "Toon Setting", expanded: false });
+  const ToonFolder = pane.addFolder({ title: "Toon Setting", expanded: true });
+
+  ToonFolder.addBinding(toonPass.uniforms.uColorA, "value", {
+    color: { type: "float" },
+    label: "Env Color",
+  });
+  ToonFolder.addBinding(toonPass.uniforms.uColorB, "value", {
+    color: { type: "float" },
+    label: "Border Color",
+  });
 
   const Update = (DT = 0) => {};
 
