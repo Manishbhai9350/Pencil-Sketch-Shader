@@ -25,6 +25,7 @@ import { TorusKnotGeometry } from "three";
 import { AmbientLight } from "three";
 import { Pane } from "tweakpane";
 import { GetToonPass } from "./postprocessing/ToonPass";
+import { CaptureNormals } from "./RT/normal.rt";
 
 const { PI } = Math;
 
@@ -86,7 +87,7 @@ scene.background = new Color("#ffffff");
 
 const InkMap = TextureLoader.load("/textures/ink.jpg");
 
-const PotMaterial = GetToonMaterial({ color:'skyblue' }, { InkMap });
+const PotMaterial = GetToonMaterial({ color: "skyblue" }, { InkMap });
 
 const Pot = new THREE.Mesh(new TeapotGeometry(1), PotMaterial);
 
@@ -131,7 +132,6 @@ const Uniforms = {
   uColorSteps: { value: 3.3 },
 };
 
-
 // pane.addBinding(scene.fog, "color", { color: { type: "float" } });
 // pane.addBinding(scene.fog, "density", { min:0, max:.2, step:0.0001 });
 
@@ -155,9 +155,9 @@ function Animate() {
   Torus.rotation.x += DT;
   Torus.rotation.y += DT;
 
-  ToonPass.update(DT);
-
   // renderer.render(scene, camera);
+  const SceneNormalTexture = CaptureNormals(scene, camera, renderer, innerWidth, innerHeight);
+  ToonPass.update(DT,SceneNormalTexture)
   composer.render(DT);
   requestAnimationFrame(Animate);
 }
@@ -169,7 +169,7 @@ function resize() {
   camera.updateProjectionMatrix();
   canvas.width = innerWidth;
   canvas.height = innerHeight;
-  composer.setSize(innerWidth, innerHeight)
+  composer.setSize(innerWidth, innerHeight);
   renderer.setSize(innerWidth, innerHeight);
 }
 

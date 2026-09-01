@@ -10,6 +10,7 @@ import { Color } from "three";
 const ToonPass = {
   uniforms: {
     tDiffuse: new Uniform(null),
+    tNormal: new Uniform(null),
     uColorA: new Uniform(new Color("#ede8e8")) /* Environment Color */,
     uColorB: new Uniform(new Color("#1d1ac7")) /* Border Color */,
     uResolution: new Uniform(new Vector2(innerWidth, innerHeight)),
@@ -23,6 +24,7 @@ const ToonPass = {
   `,
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
+    uniform sampler2D tNormal;
     uniform vec2 uResolution;
     uniform vec3 uColorA;
     uniform vec3 uColorB;
@@ -92,7 +94,10 @@ const ToonPass = {
 
         float I = dot(DiffuseColor.rgb,vec3(0.2125, 0.7154, 0.0721));
 
+        vec4 Normal = texture(tNormal,uv);
+
         gl_FragColor = vec4(vec3(FinalColor),1.0);
+        gl_FragColor = Normal;
     }   
   `,
 };
@@ -120,7 +125,9 @@ export const GetToonPass = (
     label: "Border Color",
   });
 
-  const Update = (DT = 0) => {};
+  const Update = (DT = 0, SceneNormalTexture) => {
+    toonPass.uniforms["tNormal"].value = SceneNormalTexture;
+  };
 
   return {
     update: Update,
