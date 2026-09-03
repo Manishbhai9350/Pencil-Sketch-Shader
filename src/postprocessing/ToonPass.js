@@ -49,6 +49,7 @@ const ToonPass = {
         // Detecting Edges
         vec2 texel = 1.0 / uResolution;
 
+        // 3 by 3 pixels
         vec3 PixelRight = texture(tDiffuse,uv + texel * vec2(1.0,0.0) ).rgb;
         vec3 PixelBottomRight = texture(tDiffuse,uv + texel * vec2(1.0,-1.0) ).rgb;
         vec3 PixelBottom = texture(tDiffuse,uv + texel * vec2(.0,-1.0) ).rgb;
@@ -58,6 +59,7 @@ const ToonPass = {
         vec3 PixelTop = texture(tDiffuse,uv + texel * vec2(0.0,1.0) ).rgb;
         vec3 PixelTopRight = texture(tDiffuse,uv + texel * vec2(1.0,1.0) ).rgb;
         
+
         float RightLum = Luminance(PixelRight);
         float BottomRightLum = Luminance(PixelBottomRight);
         float BottomLum = Luminance(PixelBottom);
@@ -67,37 +69,59 @@ const ToonPass = {
         float TopLum = Luminance(PixelTop);
         float TopRightLum = Luminance(PixelTopRight);
 
-        float Gx =
-        -TopLeftLum
-        + TopRightLum
-        - 2.0 * LeftLum
-        + 2.0 * RightLum
-        - BottomLeftLum
-        + BottomRightLum;
+         float Gx =
+          -TopLeftLum
+          + TopRightLum
+          - 2.0 * LeftLum
+          + 2.0 * RightLum
+          - BottomLeftLum
+          + BottomRightLum;
 
         float Gy =
-        -TopLeftLum
-        - 2.0 * TopLum
-        - TopRightLum
-        + BottomLeftLum
-        + 2.0 * BottomLum
-        + BottomRightLum;
+          -TopLeftLum
+          - 2.0 * TopLum
+          - TopRightLum
+          + BottomLeftLum
+          + 2.0 * BottomLum
+          + BottomRightLum;
+        
+        float SobelEdge = length(vec2(Gx, Gy));
+        SobelEdge = clamp(SobelEdge,0.0,1.0);
+
+        // float EdgeMask = smoothstep(.1,.3,edge);
+
+
+        // 3 by 3 Normal
+        vec3 currentNormal = texture(tNormal,uv + texel * vec2(0.0, 0.0)).rgb * 2.0 - 1.0;
+        vec3 leftNormal = texture(tNormal, uv + texel * vec2(-1.0, 0.0)).rgb * 2.0 - 1.0;
+        vec3 rightNormal = texture(tNormal, uv + texel * vec2(1.0, 0.0)).rgb * 2.0 - 1.0;
+        vec3 topNormal = texture(tNormal, uv + texel * vec2(0.0, 1.0)).rgb * 2.0 - 1.0;
+        vec3 bottomNormal = texture(tNormal, uv + texel * vec2(0.0, -1.0)).rgb * 2.0 - 1.0;
+
+        float leftDiff   = length(currentNormal - leftNormal);
+        float rightDiff  = length(currentNormal - rightNormal);
+        float topDiff    = length(currentNormal - topNormal);
+        float bottomDiff = length(currentNormal - bottomNormal);
+
+        float NormalEdge = leftDiff + rightDiff + topDiff + bottomDiff;
+
+
+       
 
         float Threshold = .3;
 
-        float edge = length(vec2(Gx, Gy));
-        edge = clamp(edge,0.0,1.0);
+        float Edge = NormalEdge + SobelEdge;
 
-        float EdgeMask = smoothstep(.1,.3,edge);
+        Edge = clamp(Edge,0.0,1.0);
+        
+        vec3 FinalColor = mix(uColorA,uColorB,Edge);
+        // float I = dot(DiffuseColor.rgb,vec3(0.2125, 0.7154, 0.0721));
 
-        vec3 FinalColor = mix(uColorA,uColorB,EdgeMask);
+        float addedEdge = clamp(SobelEdge + NormalEdge, 0.0, 1.0);
+        float maxEdge = max(SobelEdge, NormalEdge);
 
-        float I = dot(DiffuseColor.rgb,vec3(0.2125, 0.7154, 0.0721));
-
-        vec4 Normal = texture(tNormal,uv);
-
-        gl_FragColor = vec4(vec3(FinalColor),1.0);
-        gl_FragColor = Normal;
+        gl_FragColor = vec4(vec3(Edge),1.0);
+        // gl_FragColor = Normal;
     }   
   `,
 };
