@@ -11,6 +11,7 @@ const ToonPass = {
   uniforms: {
     tDiffuse: new Uniform(null),
     tNormal: new Uniform(null),
+    uNoise: new Uniform(null),
     uColorA: new Uniform(new Color("#ede8e8")) /* Environment Color */,
     uColorB: new Uniform(new Color("#1d1ac7")) /* Border Color */,
     uResolution: new Uniform(new Vector2(innerWidth, innerHeight)),
@@ -25,6 +26,7 @@ const ToonPass = {
   fragmentShader: /* glsl */ `
     uniform sampler2D tDiffuse;
     uniform sampler2D tNormal;
+    uniform sampler2D uNoise;
     uniform vec2 uResolution;
     uniform vec3 uColorA;
     uniform vec3 uColorB;
@@ -113,15 +115,23 @@ const ToonPass = {
         float Edge = NormalEdge + SobelEdge;
 
         Edge = clamp(Edge,0.0,1.0);
-        
+        float SmoothEdge = smoothstep(.2,.8,Edge);
+
+        float I = Luminance(DiffuseColor.rgb);
+
         vec3 FinalColor = mix(uColorA,uColorB,Edge);
-        // float I = dot(DiffuseColor.rgb,vec3(0.2125, 0.7154, 0.0721));
+        vec4 Noise = texture(uNoise,uv);
 
-        float addedEdge = clamp(SobelEdge + NormalEdge, 0.0, 1.0);
-        float maxEdge = max(SobelEdge, NormalEdge);
+        FinalColor = mix(uColorA,uColorB,SmoothEdge);
+        FinalColor = mix(uColorB * .8,FinalColor,step(1.0-I,.6));
 
-        gl_FragColor = vec4(vec3(Edge),1.0);
-        // gl_FragColor = Normal;
+        // Something Messed Up Here.
+        FinalColor *= mix(Noise.r,1.0,step(1.0-I,.6));
+
+
+        gl_FragColor = vec4(vec3(SmoothEdge),1.0);
+        gl_FragColor = vec4(FinalColor,1.0);
+        // gl_FragColor = Noise;
     }   
   `,
 };
@@ -129,6 +139,7 @@ const ToonPass = {
 export const GetToonPass = (
   composer = new EffectComposer(),
   pane = new Pane(),
+  noiseTexture = null
 ) => {
   // Place AFTER OutputPass so you're working in display (sRGB) space
 
@@ -137,6 +148,8 @@ export const GetToonPass = (
 
   const toonPass = new ShaderPass(ToonPass);
   composer.addPass(toonPass);
+
+  toonPass.uniforms["uNoise"].value = noiseTexture;
 
   const ToonFolder = pane.addFolder({ title: "Toon Setting", expanded: true });
 

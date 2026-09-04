@@ -137,10 +137,12 @@ const Uniforms = {
 
 // Post Processing;
 
+const ScratchNoiseTexture = TextureLoader.load('/textures/noise_scratch.png')
+
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 
-const ToonPass = GetToonPass(composer, pane);
+const ToonPass = GetToonPass(composer, pane, ScratchNoiseTexture);
 
 const clock = new Clock();
 let PrevTime = clock.getElapsedTime();
