@@ -12,6 +12,7 @@ const ToonPass = {
     tDiffuse: new Uniform(null),
     tNormal: new Uniform(null),
     uNoise: new Uniform(null),
+    uTime: new Uniform(0),
     uColorA: new Uniform(new Color("#ede8e8")) /* Environment Color */,
     uColorB: new Uniform(new Color("#1d1ac7")) /* Border Color */,
     uResolution: new Uniform(new Vector2(innerWidth, innerHeight)),
@@ -30,14 +31,26 @@ const ToonPass = {
     uniform vec2 uResolution;
     uniform vec3 uColorA;
     uniform vec3 uColorB;
+    uniform float uTime;
 
     varying vec2 vUv;
 
     vec3 luma = vec3(0.299,0.587,0.114);
     
+    float random(vec2 co) {
+      return fract(sin(dot(co, vec2(12.9898, 78.233))) * 43758.5453);
+    }
+
     float Luminance(vec3 PixelColor){
       return dot(PixelColor,luma);
     } 
+
+    const float bayerMatrix4x4[16] = float[](
+        0.0,  8.0,  2.0, 10.0,
+      12.0,  4.0, 14.0,  6.0,
+        3.0, 11.0,  1.0,  9.0,
+      15.0,  7.0, 13.0,  5.0
+    );
 
 
     void main() {
@@ -117,19 +130,49 @@ const ToonPass = {
         Edge = clamp(Edge,0.0,1.0);
         float SmoothEdge = smoothstep(.2,.8,Edge);
 
-        float I = Luminance(DiffuseColor.rgb);
+        float Brightness = Luminance(DiffuseColor.rgb);
 
         vec3 FinalColor = mix(uColorA,uColorB,Edge);
+        // Sampling Noise Texture;
         vec4 Noise = texture(uNoise,uv);
 
         FinalColor = mix(uColorA,uColorB,SmoothEdge);
-        FinalColor = mix(uColorB * .8,FinalColor,step(1.0-I,.6));
-
-        // Something Messed Up Here.
-        FinalColor *= mix(Noise.r,1.0,step(1.0-I,.6));
+        float ShadowIntensity = 1.0 - step(1.0-Brightness,.5);
 
 
-        gl_FragColor = vec4(vec3(SmoothEdge),1.0);
+        // Dither Effect On Shadows
+        int x = int(mod(gl_FragCoord.x, 4.0));
+        int y = int(mod(gl_FragCoord.y, 4.0));
+        float threshold = bayerMatrix4x4[y * 4 + x] / 16.0;
+
+        float Border = step(.46,abs(uv.x - .5));
+        Border = max(Border,step(.46,abs(uv.y - .5)));
+
+        ShadowIntensity = max(ShadowIntensity,Border);
+
+        float dithered = step(threshold, Brightness) * ShadowIntensity;
+
+        FinalColor = mix(FinalColor,uColorB * .8,ShadowIntensity);
+        // FinalColor = mix(FinalColor,uColorA * .6,dithered);
+
+        float RNoise = random(vec2(uv + uTime * .1));
+        // float Hatch = (sin((uv.x + uv.y) * 300.0) * .5 + .5) * RNoise;
+        float HatchA = sin((uv.x + uv.y) * 500.0) * RNoise;
+
+        float HatchB = sin((uv.x - uv.y) * 500.0) * RNoise;
+        float PencilA = step(.4,HatchA);
+        float PencilB = step(.4,HatchB);
+        float Pencil = max(PencilA,PencilB);
+
+        FinalColor -= Pencil * ShadowIntensity * .2;
+
+        // FinalColor = vec3(Pencil);
+
+        // FinalColor = mix(FinalColor,DiffuseColor.rgb,step(.333,uv.y));
+        // FinalColor = mix(FinalColor,currentNormal.rgb,step(.666,uv.y));
+
+        // FinalColor = vec3(Border);
+
         gl_FragColor = vec4(FinalColor,1.0);
         // gl_FragColor = Noise;
     }   
@@ -139,7 +182,7 @@ const ToonPass = {
 export const GetToonPass = (
   composer = new EffectComposer(),
   pane = new Pane(),
-  noiseTexture = null
+  noiseTexture = null,
 ) => {
   // Place AFTER OutputPass so you're working in display (sRGB) space
 
@@ -164,6 +207,7 @@ export const GetToonPass = (
 
   const Update = (DT = 0, SceneNormalTexture) => {
     toonPass.uniforms["tNormal"].value = SceneNormalTexture;
+    toonPass.uniforms["uTime"].value += DT;
   };
 
   return {

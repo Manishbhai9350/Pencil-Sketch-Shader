@@ -138,6 +138,9 @@ const Uniforms = {
 // Post Processing;
 
 const ScratchNoiseTexture = TextureLoader.load('/textures/noise_scratch.png')
+ScratchNoiseTexture.wrapS = ScratchNoiseTexture.wrapT = THREE.RepeatWrapping;
+ScratchNoiseTexture.repeat.set(3,3)
+ScratchNoiseTexture.needsUpdate = true;
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
