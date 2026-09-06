@@ -13,9 +13,13 @@ const ToonPass = {
     tNormal: new Uniform(null),
     uNoise: new Uniform(null),
     uTime: new Uniform(0),
-    uColorA: new Uniform(new Color("#ede8e8")) /* Environment Color */,
-    uColorB: new Uniform(new Color("#1d1ac7")) /* Border Color */,
+    uColorA: new Uniform(new Color("#f1f1f1")) /* Environment Color */,
+    uColorB: new Uniform(new Color("#1e1ea6")) /* Border Color */,
     uResolution: new Uniform(new Vector2(innerWidth, innerHeight)),
+
+    uShadowPower: new Uniform(.2),
+    uShadowThreshold: new Uniform(.57),
+    uPencilIntensity: new Uniform(.11),
   },
   vertexShader: /* glsl */ `
     varying vec2 vUv;
@@ -32,6 +36,10 @@ const ToonPass = {
     uniform vec3 uColorA;
     uniform vec3 uColorB;
     uniform float uTime;
+
+    uniform float uShadowThreshold;
+    uniform float uShadowPower;
+    uniform float uPencilIntensity;
 
     varying vec2 vUv;
 
@@ -137,8 +145,8 @@ const ToonPass = {
         vec4 Noise = texture(uNoise,uv);
 
         FinalColor = mix(uColorA,uColorB,SmoothEdge);
-        float ShadowIntensity = 1.0 - step(1.0-Brightness,.65);
-        float ToonShadow = 1.0 - pow(floor(Brightness * 5.0) / 5.0,.4);
+        float ShadowIntensity = 1.0 - step(1.0-Brightness,uShadowThreshold);
+        float ToonShadow = 1.0 - pow(floor(Brightness * 5.0) / 5.0,uShadowPower);
         float Shadow = ShadowIntensity * ToonShadow;
         
 
@@ -152,16 +160,16 @@ const ToonPass = {
         FinalColor = mix(FinalColor,uColorB * .8,Shadow);
         // FinalColor = mix(FinalColor,uColorA * .6,dithered);
 
-        float RNoise = random(vec2(uv + uTime * .1));
+        float RNoise = random(vec2(uv + uTime * 100.0));
         // float Hatch = (sin((uv.x + uv.y) * 300.0) * .5 + .5) * RNoise;
-        float HatchA = sin((uv.x + uv.y) * 1400.0) * RNoise;
+        float HatchA = sin((uv.x + uv.y + uTime) * 1400.0) * RNoise;
 
-        float HatchB = sin((uv.x - uv.y) * 1000.0) * RNoise;
+        float HatchB = sin((uv.x - uv.y + uTime) * 1000.0) * RNoise;
         float PencilA = step(.4,HatchA);
         float PencilB = step(.4,HatchB);
         float Pencil = max(PencilA,PencilB);
 
-        FinalColor -= Pencil * ShadowIntensity * .0;
+        FinalColor -= Pencil * ShadowIntensity * uPencilIntensity;
 
         // Noise On Light Part;
 
@@ -207,6 +215,26 @@ export const GetToonPass = (
   ToonFolder.addBinding(toonPass.uniforms.uColorB, "value", {
     color: { type: "float" },
     label: "Border Color",
+  });
+
+
+  ToonFolder.addBinding(toonPass.uniforms.uShadowPower, "value", {
+    min:0,
+    max:2,
+    step:.001,
+    label: "Shadow Power",
+  });
+  ToonFolder.addBinding(toonPass.uniforms.uShadowThreshold, "value", {
+    min:0,
+    max:1.1,
+    step:.001,
+    label: "Shadow Threshold",
+  });
+  ToonFolder.addBinding(toonPass.uniforms.uPencilIntensity, "value", {
+    min:0,
+    max:.5,
+    step:.01,
+    label: "Pencil Noise",
   });
 
   const Update = (DT = 0, SceneNormalTexture) => {

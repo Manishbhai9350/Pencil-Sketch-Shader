@@ -209,17 +209,17 @@ function Animate() {
   Torus.rotation.x += DT;
   Torus.rotation.y += DT;
 
-  // const SceneNormalTexture = CaptureNormals(
-  //   scene,
-  //   camera,
-  //   renderer,
-  //   innerWidth,
-  //   innerHeight,
-  // );
+  const SceneNormalTexture = CaptureNormals(
+    scene,
+    camera,
+    renderer,
+    innerWidth,
+    innerHeight,
+  );
 
-  // ToonPass.update(DT, SceneNormalTexture);
-  // composer.render(DT);
-  renderer.render(scene,camera);
+  ToonPass.update(DT, SceneNormalTexture);
+  composer.render(DT);
+  // renderer.render(scene,camera);
 
   if (Model) {
     Model.rotation.y = Math.sin(CurrentTime) * 0.04;
