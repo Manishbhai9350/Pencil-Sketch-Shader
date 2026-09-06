@@ -26,6 +26,9 @@ import { AmbientLight } from "three";
 import { Pane } from "tweakpane";
 import { GetToonPass } from "./postprocessing/ToonPass";
 import { CaptureNormals } from "./RT/normal.rt";
+import { Scene } from "three";
+import { Vector3 } from "three";
+import { ShaderPass } from "postprocessing";
 
 const { PI } = Math;
 
@@ -50,13 +53,17 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const camera = new THREE.PerspectiveCamera(
-  75,
+  30,
   innerWidth / innerHeight,
-  1,
+  0.1,
   1000,
 );
 camera.position.z = 7;
 camera.position.y = 4;
+
+camera.position.set(2.3, 2, 3.4);
+// camera.position.set(15, 5, .6);
+camera.lookAt(new Vector3(4, 0, -2));
 
 const Manager = new THREE.LoadingManager();
 const Draco = new DRACOLoader(Manager);
@@ -85,6 +92,28 @@ const { width: SceneWidth, height: SceneHeight } = GetSceneBounds(
 scene.background = new Color("#ffffff");
 // scene.fog = new FogExp2("#2a2727", 0);
 
+// ?? Scene Model
+
+let Model = null;
+let ModelCamera = null;
+const StanMat = new MeshStandardMaterial({ color: "gray" });
+GLB.load("/models/scene.glb", (glb) => {
+  Model = glb.scene;
+  ModelCamera = glb.cameras[0];
+
+  Model.position.sub(new Vector3(4,1,0))
+
+  Model.traverse((Node) => {
+    if (Node.isMesh) {
+      Node.material = StanMat;
+      Node.castShadow = true;
+      Node.receiveShadow = true;
+    }
+  });
+
+  scene.add(Model);
+});
+
 const InkMap = TextureLoader.load("/textures/ink.jpg");
 
 const PotMaterial = GetToonMaterial({ color: "skyblue" }, { InkMap });
@@ -100,11 +129,7 @@ const Ground = new Mesh(
   }),
 );
 
-scene.add(new AmbientLight(0xffffff, 0.3));
-const D = new DirectionalLight(0xffffff, 2.5);
-D.position.set(10, 10, 10);
-D.castShadow = true;
-scene.add(D);
+
 
 const MetaBallMaterial = GetToonMaterial({ color: "yellow" }, { InkMap });
 
@@ -115,6 +140,8 @@ const Torus = new Mesh(
   GetToonMaterial({ color: "limegreen" }, { InkMap }),
   // new MeshStandardMaterial({color:'red'})
 );
+
+Pot.visible = Ground.visible = Torus.visible = MetaBall.visible = false;
 
 Torus.position.set(0, 0, 0);
 Torus.castShadow = true;
@@ -128,6 +155,31 @@ Ground.position.y = -2.2;
 Ground.receiveShadow = true;
 scene.add(Ground, MetaBall, Torus, Pot);
 
+scene.add(new AmbientLight(0xffffff, 1));
+
+const Ball = new Mesh(
+  new IcosahedronGeometry(.5,1),
+  new MeshBasicMaterial({color:'yellow'})
+)
+Ball.position.set(0,0,0)
+
+Ball.visible = false;
+
+scene.add(new AmbientLight(0xffffff, 0.3));
+const D = new DirectionalLight(0xffffff, 2.5);
+D.position.set(4,1, 3);
+D.target = Ball;
+D.castShadow = true;
+const DD = new THREE.DirectionalLightHelper(D,.1,'red')
+scene.add(D,DD);
+
+Controls.target0 = Ball;
+
+const spot1 = new THREE.SpotLight(0xffffff, 3, 3,.3,.7,.1);
+spot1.position.set(-1, 1, 1)
+const Spot1Help = new THREE.SpotLightHelper(spot1,'purple')
+scene.add(spot1,Spot1Help,Ball);
+
 const Uniforms = {
   uColorSteps: { value: 3.3 },
 };
@@ -137,14 +189,11 @@ const Uniforms = {
 
 // Post Processing;
 
-const ScratchNoiseTexture = TextureLoader.load('/textures/noise_scratch.png')
-ScratchNoiseTexture.wrapS = ScratchNoiseTexture.wrapT = THREE.RepeatWrapping;
-ScratchNoiseTexture.repeat.set(3,3)
-ScratchNoiseTexture.needsUpdate = true;
+// composer.addPass(new RenderPass(scene, camera));
+const ScratchNoiseTexture = TextureLoader.load("/textures/noise_scratch.png");
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-
 const ToonPass = GetToonPass(composer, pane, ScratchNoiseTexture);
 
 const clock = new Clock();
@@ -160,10 +209,22 @@ function Animate() {
   Torus.rotation.x += DT;
   Torus.rotation.y += DT;
 
-  // renderer.render(scene, camera);
-  const SceneNormalTexture = CaptureNormals(scene, camera, renderer, innerWidth, innerHeight);
-  ToonPass.update(DT,SceneNormalTexture)
-  composer.render(DT);
+  // const SceneNormalTexture = CaptureNormals(
+  //   scene,
+  //   camera,
+  //   renderer,
+  //   innerWidth,
+  //   innerHeight,
+  // );
+
+  // ToonPass.update(DT, SceneNormalTexture);
+  // composer.render(DT);
+  renderer.render(scene,camera);
+
+  if (Model) {
+    Model.rotation.y = Math.sin(CurrentTime) * 0.04;
+  }
+
   requestAnimationFrame(Animate);
 }
 

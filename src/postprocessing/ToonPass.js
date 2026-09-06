@@ -137,42 +137,46 @@ const ToonPass = {
         vec4 Noise = texture(uNoise,uv);
 
         FinalColor = mix(uColorA,uColorB,SmoothEdge);
-        float ShadowIntensity = 1.0 - step(1.0-Brightness,.5);
-
+        float ShadowIntensity = 1.0 - step(1.0-Brightness,.65);
+        float ToonShadow = 1.0 - pow(floor(Brightness * 5.0) / 5.0,.4);
+        float Shadow = ShadowIntensity * ToonShadow;
+        
 
         // Dither Effect On Shadows
         int x = int(mod(gl_FragCoord.x, 4.0));
         int y = int(mod(gl_FragCoord.y, 4.0));
         float threshold = bayerMatrix4x4[y * 4 + x] / 16.0;
 
-        float Border = step(.46,abs(uv.x - .5));
-        Border = max(Border,step(.46,abs(uv.y - .5)));
+        float dithered = step(threshold, Brightness) * Shadow;
 
-        ShadowIntensity = max(ShadowIntensity,Border);
-
-        float dithered = step(threshold, Brightness) * ShadowIntensity;
-
-        FinalColor = mix(FinalColor,uColorB * .8,ShadowIntensity);
+        FinalColor = mix(FinalColor,uColorB * .8,Shadow);
         // FinalColor = mix(FinalColor,uColorA * .6,dithered);
 
         float RNoise = random(vec2(uv + uTime * .1));
         // float Hatch = (sin((uv.x + uv.y) * 300.0) * .5 + .5) * RNoise;
-        float HatchA = sin((uv.x + uv.y) * 500.0) * RNoise;
+        float HatchA = sin((uv.x + uv.y) * 1400.0) * RNoise;
 
-        float HatchB = sin((uv.x - uv.y) * 500.0) * RNoise;
+        float HatchB = sin((uv.x - uv.y) * 1000.0) * RNoise;
         float PencilA = step(.4,HatchA);
         float PencilB = step(.4,HatchB);
         float Pencil = max(PencilA,PencilB);
 
-        FinalColor -= Pencil * ShadowIntensity * .2;
+        FinalColor -= Pencil * ShadowIntensity * .0;
 
-        // FinalColor = vec3(Pencil);
+        // Noise On Light Part;
+
+        float LightNoise = random(uv + uTime);
+        FinalColor -= LightNoise * (1.0 - ShadowIntensity) * .1;
+
+        // FinalColor = vec3(ToonShadow);
+        // FinalColor = vec3(ShadowIntensity);
+
+        // ShadowIntensity = min(.6,ShadowIntensity);
+        // FinalColor = vec3(ShadowIntensity * ToonShadow);
+
 
         // FinalColor = mix(FinalColor,DiffuseColor.rgb,step(.333,uv.y));
         // FinalColor = mix(FinalColor,currentNormal.rgb,step(.666,uv.y));
-
-        // FinalColor = vec3(Border);
-
         gl_FragColor = vec4(FinalColor,1.0);
         // gl_FragColor = Noise;
     }   
