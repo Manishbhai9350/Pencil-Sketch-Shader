@@ -166,7 +166,7 @@ Ball.position.set(0,0,0)
 Ball.visible = false;
 
 scene.add(new AmbientLight(0xffffff, 0.3));
-const D = new DirectionalLight(0xffffff, 2.5);
+const D = new DirectionalLight(0xffffff, 3.5);
 D.position.set(4,1, 3);
 D.target = Ball;
 D.castShadow = true;
