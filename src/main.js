@@ -93,17 +93,26 @@ scene.background = new Color("#ffffff");
 // scene.fog = new FogExp2("#2a2727", 0);
 
 // ?? Scene Model
+const StanMat = new MeshStandardMaterial({ color: "gray" });
 
 let Model = null;
 let ModelCamera = null;
-const StanMat = new MeshStandardMaterial({ color: "gray" });
+let LampNormalStart = null;
+let LampNormalEnd = null;
+let LampNormal = null;
 GLB.load("/models/scene.glb", (glb) => {
   Model = glb.scene;
   ModelCamera = glb.cameras[0];
 
-  Model.position.sub(new Vector3(4,1,0))
+  // Model.position.sub(new Vector3(4,1,0))
+
+  LampNormalStart = Model.getObjectByName("lamp_normal_start") 
+  LampNormalEnd = Model.getObjectByName("lamp_normal_end");
+
+  LampNormal = LampNormalEnd.position.clone().sub(LampNormalStart.position).normalize();
 
   Model.traverse((Node) => {
+    // console.log(Node.name)
     if (Node.isMesh) {
       Node.material = StanMat;
       Node.castShadow = true;
@@ -157,28 +166,42 @@ scene.add(Ground, MetaBall, Torus, Pot);
 
 scene.add(new AmbientLight(0xffffff, 1));
 
-const Ball = new Mesh(
-  new IcosahedronGeometry(.5,1),
+const CenterBallTarget = new Mesh(
+  new IcosahedronGeometry(.1,1),
   new MeshBasicMaterial({color:'yellow'})
 )
-Ball.position.set(0,0,0)
-
-Ball.visible = false;
+CenterBallTarget.position.set(-1/2,0,0)
+CenterBallTarget.visible = true;
 
 scene.add(new AmbientLight(0xffffff, 0.3));
 const D = new DirectionalLight(0xffffff, 3.5);
 D.position.set(4,1, 3);
-D.target = Ball;
+D.target = CenterBallTarget;
 D.castShadow = true;
 const DD = new THREE.DirectionalLightHelper(D,.1,'red')
 scene.add(D,DD);
 
-Controls.target0 = Ball;
+Controls.target0 = CenterBallTarget;
+scene.add(CenterBallTarget);
 
-const spot1 = new THREE.SpotLight(0xffffff, 3, 3,.3,.7,.1);
-spot1.position.set(-1, 1, 1)
-const Spot1Help = new THREE.SpotLightHelper(spot1,'purple')
-scene.add(spot1,Spot1Help,Ball);
+let LampLightPositionSet = false;
+const LampLight = new THREE.SpotLight(0xffffff, 3, 3,.3,.7,.1);
+LampLight.position.set(-1, 1, 1)
+const LampLightHelp = new THREE.SpotLightHelper(LampLight,'purple')
+
+
+const LampTargetBall = new Mesh(
+  new IcosahedronGeometry(.1,1),
+  new MeshBasicMaterial({color:'purple'})
+)
+LampTargetBall.position.set(-1/2,-.3,-1/2)
+
+LampLight.target = LampTargetBall;
+
+LampLightHelp.update()
+
+scene.add(LampLight,LampTargetBall,LampLightHelp)
+
 
 const Uniforms = {
   uColorSteps: { value: 3.3 },
@@ -209,22 +232,35 @@ function Animate() {
   Torus.rotation.x += DT;
   Torus.rotation.y += DT;
 
-  const SceneNormalTexture = CaptureNormals(
-    scene,
-    camera,
-    renderer,
-    innerWidth,
-    innerHeight,
-  );
+  // const SceneNormalTexture = CaptureNormals(
+  //   scene,
+  //   camera,
+  //   renderer,
+  //   innerWidth,
+  //   innerHeight,
+  // );
 
-  ToonPass.update(DT, SceneNormalTexture);
-  composer.render(DT);
-  // renderer.render(scene,camera);
+  // ToonPass.update(DT, SceneNormalTexture);
+  // composer.render(DT);
 
-  if (Model) {
-    Model.rotation.y = Math.sin(CurrentTime) * 0.04;
+  if(!LampLightPositionSet && !!LampNormal) {
+
+    console.log(LampNormal)
+
+    const LampLightBall = new Mesh(
+      new IcosahedronGeometry(2,10),
+      new MeshBasicMaterial({ color:"yellow" })
+    )
+    scene.add(LampLightBall)
+    LampLightBall.position.set(LampNormalStart.x,LampNormalStart.y,LampNormalStart.z)
+    LampLight.position.set(LampNormalStart.x,LampNormalStart.y,LampNormalStart.z);
+
+    LampTargetBall.position.set(LampNormalStart.x,LampNormalStart.y,LampNormalStart.z)
+    LampLightPositionSet = true;
   }
 
+
+  renderer.render(scene,camera);
   requestAnimationFrame(Animate);
 }
 

@@ -206,7 +206,7 @@ export const GetToonPass = (
 
   toonPass.uniforms["uNoise"].value = noiseTexture;
 
-  const ToonFolder = pane.addFolder({ title: "Toon Setting", expanded: true });
+  const ToonFolder = pane.addFolder({ title: "Toon Setting", expanded: false });
 
   ToonFolder.addBinding(toonPass.uniforms.uColorA, "value", {
     color: { type: "float" },
