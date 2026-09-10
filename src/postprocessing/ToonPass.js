@@ -140,13 +140,15 @@ const ToonPass = {
 
         float Brightness = Luminance(DiffuseColor.rgb);
 
-        vec3 FinalColor = mix(uColorA,uColorB,Edge);
         // Sampling Noise Texture;
         vec4 Noise = texture(uNoise,uv);
+        
+        float ToonedBrightness = floor(Brightness * 5.0) / 5.0;
 
-        FinalColor = mix(uColorA,uColorB,SmoothEdge);
+        vec3 EnvColor = mix(DiffuseColor.rgb,uColorA,0.0);
+        vec3 FinalColor = mix(uColorA,uColorB,SmoothEdge);
         float ShadowIntensity = 1.0 - step(1.0-Brightness,uShadowThreshold);
-        float ToonShadow = 1.0 - pow(floor(Brightness * 5.0) / 5.0,uShadowPower);
+        float ToonShadow = 1.0 - pow(ToonedBrightness,uShadowPower);
         float Shadow = ShadowIntensity * ToonShadow;
         
 
@@ -169,7 +171,7 @@ const ToonPass = {
         float PencilB = step(.4,HatchB);
         float Pencil = max(PencilA,PencilB);
 
-        FinalColor -= Pencil * ShadowIntensity * uPencilIntensity;
+        // FinalColor -= Pencil * ShadowIntensity * uPencilIntensity;
 
         // Noise On Light Part;
 
