@@ -49,6 +49,8 @@ import { CaptureNormals } from "./RT/normal.rt";
 
 const pane = new Pane();
 
+// pane.hidden = true;
+
 const canvas = document.querySelector("canvas");
 
 const { innerWidth, innerHeight } = window;
@@ -76,8 +78,9 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const stats = new Stats();
 
+
 stats.showPanel(0); // 0 = FPS
-document.body.appendChild(stats.dom);
+// document.body.appendChild(stats.dom);
 
 stats.dom.style.position = "fixed";
 stats.dom.style.left = "0px";
