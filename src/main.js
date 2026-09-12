@@ -49,7 +49,7 @@ import { CaptureNormals } from "./RT/normal.rt";
 
 const pane = new Pane();
 
-// pane.hidden = true;
+pane.hidden = true;
 
 const canvas = document.querySelector("canvas");
 
