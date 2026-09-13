@@ -42,6 +42,7 @@ import { GetToonMaterial } from "./material/Toon";
 import { Pane } from "tweakpane";
 import { GetToonPass } from "./postprocessing/ToonPass";
 import { CaptureNormals } from "./RT/normal.rt";
+import { CircleOfConfusionMaterial } from "postprocessing";
 
 // ============================================================
 // CONFIG
@@ -49,7 +50,7 @@ import { CaptureNormals } from "./RT/normal.rt";
 
 const pane = new Pane();
 
-pane.hidden = true;
+// pane.hidden = true;
 
 const canvas = document.querySelector("canvas");
 
@@ -80,7 +81,7 @@ const stats = new Stats();
 
 
 stats.showPanel(0); // 0 = FPS
-// document.body.appendChild(stats.dom);
+document.body.appendChild(stats.dom);
 
 stats.dom.style.position = "fixed";
 stats.dom.style.left = "0px";
@@ -93,7 +94,7 @@ stats.dom.style.zIndex = "9999";
 
 const scene = new Scene();
 
-scene.background = new Color("#ffffff");
+scene.background = new Color("#3d3d3d");
 
 // ============================================================
 // CAMERA
@@ -101,7 +102,7 @@ scene.background = new Color("#ffffff");
 
 const camera = new PerspectiveCamera(30, innerWidth / innerHeight, 0.1, 1000);
 
-camera.position.set(2.3, 2, 3.4);
+camera.position.set(2.7, 1.7, -1.8);
 
 camera.lookAt(new Vector3(4, 0, -2));
 
@@ -225,68 +226,14 @@ Pot.position.set(4, 0, -2);
 scene.add(Ground, MetaBall, Torus, Pot);
 
 // ============================================================
-// AMBIENT LIGHT
-// ============================================================
-
-const Ambient = new AmbientLight(0xffffff, 1);
-
-scene.add(Ambient);
-
-// ============================================================
-// DIRECTIONAL LIGHT
-// ============================================================
-
-const CenterBallTarget = new Mesh(
-  new IcosahedronGeometry(0.1, 1),
-
-  new MeshBasicMaterial({
-    color: "yellow",
-  }),
-);
-
-CenterBallTarget.position.set(-0.5, 0, 0);
-
-CenterBallTarget.visible = true;
-
-const Directional = new DirectionalLight(0xffffff, 6.5);
-
-Directional.position.set(4, 1, 3);
-
-Directional.target = CenterBallTarget;
-
-Directional.castShadow = true;
-
-const DirectionalHelper = new DirectionalLightHelper(Directional, 0.1, "red");
-
-scene.add(Directional, DirectionalHelper, CenterBallTarget);
-
-// ============================================================
-// DESK LAMP SPOTLIGHT
-// ============================================================
-
-const LampLight = new SpotLight(0xffffff, 4, 5, Math.PI / 5, 0.5, 1);
-
-LampLight.castShadow = true;
-
-// Improve shadow quality
-
-LampLight.shadow.mapSize.set(1024, 1024);
-
-LampLight.shadow.bias = -0.0001;
-
-const LampLightHelper = new SpotLightHelper(LampLight, "purple");
-
-// ============================================================
-// MONITOR RECT AREA LIGHT
-// ============================================================
-
-const MonitorLight = new RectAreaLight(0x9fc5ff, 3, 1.5, 0.8);
-
-// ============================================================
 // LIGHT DEBUG HELPERS
 // ============================================================
 
 let MonitorLightHelper = null;
+let MonitorLight = null;
+let MonitorScreen = null;
+let DeskFocusSphere = null;
+
 
 // ============================================================
 // LIGHT CONTROLS
@@ -297,45 +244,10 @@ const LightningFolder = pane.addFolder({
   expanded: false,
 });
 
-LightningFolder.addBinding(LampLight, "intensity", {
-  min: 0,
-  max: 10,
-  step: 0.001,
-  label: "Lamp Light",
-}).on("change", () => {
-  LampLightHelper.update();
-});
-
-LightningFolder.addBinding(LampLight, "angle", {
-  min: 0,
-  max: Math.PI,
-  step: 0.001,
-  label: "Lamp Angle",
-}).on("change", () => {
-  LampLightHelper.update();
-});
-
-LightningFolder.addBinding(LampLight, "penumbra", {
-  min: 0,
-  max: 1,
-  step: 0.001,
-  label: "Lamp Penumbra",
-}).on("change", () => {
-  LampLightHelper.update();
-});
-
-LightningFolder.addBinding(Directional, "intensity", {
-  min: 0,
-  max: 6,
-  step: 0.001,
-  label: "Directional Light",
-});
 
 // ============================================================
 // ADD LIGHTS
 // ============================================================
-
-scene.add(LampLight, LampLight.target, LampLightHelper, MonitorLight);
 
 // ============================================================
 // MODEL
@@ -346,26 +258,10 @@ const StanMat = new MeshStandardMaterial({
 });
 
 let Model = null;
-let ModelCamera = null;
-
-// ============================================================
-// GLB LIGHT MARKERS
-// ============================================================
-
-let LampNormalStart = null;
-let LampNormalEnd = null;
-let MonitorScreen = null;
-let DeskFocusSphere = null;
 
 // ============================================================
 // WORLD SPACE TRANSFORM DATA
 // ============================================================
-
-const LampStartWorld = new Vector3();
-
-const LampEndWorld = new Vector3();
-
-const LampDirection = new Vector3();
 
 const MonitorWorldPosition = new Vector3();
 
@@ -373,57 +269,7 @@ const MonitorWorldScale = new Vector3();
 
 const MonitorWorldQuaternion = new Quaternion();
 
-// ============================================================
-// SETUP LAMP LIGHT
-// ============================================================
 
-function SetupLampLight() {
-  if (!LampNormalStart || !LampNormalEnd) {
-    console.warn("Lamp normal markers not found.");
-
-    return;
-  }
-
-  // ----------------------------------------------------------
-  // WORLD POSITIONS
-  // ----------------------------------------------------------
-
-  LampNormalStart.getWorldPosition(LampStartWorld);
-
-  LampNormalEnd.getWorldPosition(LampEndWorld);
-
-  // ----------------------------------------------------------
-  // DIRECTION
-  // ----------------------------------------------------------
-
-  LampDirection.subVectors(LampEndWorld, LampStartWorld).normalize();
-
-  // ----------------------------------------------------------
-  // SPOTLIGHT POSITION
-  // ----------------------------------------------------------
-
-  LampLight.position.copy(LampStartWorld).addScaledVector(LampDirection, 0.05);
-
-  // ----------------------------------------------------------
-  // SPOTLIGHT TARGET
-  // ----------------------------------------------------------
-
-  LampLight.target.position
-    .copy(LampEndWorld)
-    .addScaledVector(LampDirection, 1);
-
-  // Force matrix update
-
-  LampLight.target.updateMatrixWorld(true);
-
-  LampLight.updateMatrixWorld(true);
-
-  LampLightHelper.update();
-
-  console.log("Lamp position:", LampLight.position);
-
-  console.log("Lamp direction:", LampDirection);
-}
 
 // ============================================================
 // SETUP MONITOR LIGHT
@@ -432,9 +278,11 @@ function SetupLampLight() {
 function SetupMonitorLight() {
   if (!MonitorScreen) {
     console.warn("monitor_screen not found.");
-
     return;
   }
+
+
+  MonitorLight = new RectAreaLight(new Color("white"),1,1,1)
 
   // ----------------------------------------------------------
   // WORLD POSITION
@@ -443,6 +291,8 @@ function SetupMonitorLight() {
   MonitorScreen.getWorldPosition(MonitorWorldPosition);
 
   MonitorLight.position.copy(MonitorWorldPosition);
+
+
 
   // ----------------------------------------------------------
   // WORLD SCALE
@@ -477,9 +327,11 @@ function SetupMonitorLight() {
   // LIGHT ROTATION
   // ----------------------------------------------------------
 
-  const MonitorTarget = MonitorWorldPosition.clone().add(MonitorNormal);
 
-  MonitorLight.lookAt(MonitorTarget);
+  MonitorLight.position.z -= .001
+
+  MonitorLight.rotation.x = Math.PI;
+  MonitorLight.rotation.y = Math.PI - .02;
 
   // ----------------------------------------------------------
   // SCREEN SIZE
@@ -516,12 +368,7 @@ function SetupMonitorLight() {
     scene.add(MonitorLightHelper);
   }
 
-  console.log("Monitor position:", MonitorLight.position);
-
-  console.log("Monitor normal:", MonitorNormal);
-
-  console.log("Monitor size:", MonitorLight.width, MonitorLight.height);
-
+  
   const MonitorLightPane = pane.addFolder({
     title: "Monitor Light",
     expanded: true,
@@ -535,7 +382,7 @@ function SetupMonitorLight() {
   });
   MonitorLightPane.addBinding(MonitorLight, "intensity", {
     min: 0,
-    max: 14,
+    max: 1,
     step: 0.001,
     label: "Intensity",
   });
@@ -545,8 +392,28 @@ function SetupMonitorLight() {
 // SETUP ALL LIGHTS
 // ============================================================
 
-function SetupLights() {
-  SetupLampLight();
+function SetupLights(model) {
+
+  const DeskFocus = model.getObjectByName("desk_focus_sphere")
+
+  DeskFocus.visible = false;
+
+  const Directional1 = new DirectionalLight(0xffffff,1)
+  Directional1.position.set(-4,4,.2)
+  Directional1.target = DeskFocus;
+
+  const Directional1Helper = new DirectionalLightHelper(Directional1,.1,new Color("red"))
+
+  LightningFolder.addBinding(Directional1,"intensity",{
+    min:0,
+    max:4,
+    step:.001,
+    label:"Directional Light"
+  })
+
+
+  scene.add(Directional1,Directional1Helper)
+
 
   SetupMonitorLight();
 }
@@ -561,15 +428,9 @@ GLB.load(
   (glb) => {
     Model = glb.scene;
 
-    ModelCamera = glb.cameras[0];
-
     // --------------------------------------------------------
     // FIND OBJECTS
     // --------------------------------------------------------
-
-    LampNormalStart = Model.getObjectByName("lamp_normal_start");
-
-    LampNormalEnd = Model.getObjectByName("lamp_normal_end");
 
     MonitorScreen = Model.getObjectByName("monitor_screen");
 
@@ -577,18 +438,10 @@ GLB.load(
     // DEBUG
     // --------------------------------------------------------
 
-    console.log("Lamp Start:", LampNormalStart);
-
-    console.log("Lamp End:", LampNormalEnd);
-
-    console.log("Monitor Screen:", MonitorScreen);
-
-    console.log(MonitorScreen.quaternion);
 
     // --------------------------------------------------------
     // MODEL MATERIALS
     // --------------------------------------------------------
-
     Model.traverse((Node) => {
       if (!Node.isMesh) return;
 
@@ -633,7 +486,7 @@ GLB.load(
     // SETUP LIGHTS
     // --------------------------------------------------------
 
-    SetupLights();
+    SetupLights(Model);
   },
 );
 
