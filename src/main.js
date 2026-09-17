@@ -43,6 +43,7 @@ import { Pane } from "tweakpane";
 import { GetToonPass } from "./postprocessing/ToonPass";
 import { CaptureNormals } from "./RT/normal.rt";
 import { CircleOfConfusionMaterial } from "postprocessing";
+import { Materials } from "./material/Scene.materials";
 
 // ============================================================
 // CONFIG
@@ -78,7 +79,6 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 // ============================================================
 
 const stats = new Stats();
-
 
 stats.showPanel(0); // 0 = FPS
 document.body.appendChild(stats.dom);
@@ -234,7 +234,6 @@ let MonitorLight = null;
 let MonitorScreen = null;
 let DeskFocusSphere = null;
 
-
 // ============================================================
 // LIGHT CONTROLS
 // ============================================================
@@ -243,7 +242,6 @@ const LightningFolder = pane.addFolder({
   title: "Lighting",
   expanded: false,
 });
-
 
 // ============================================================
 // ADD LIGHTS
@@ -269,8 +267,6 @@ const MonitorWorldScale = new Vector3();
 
 const MonitorWorldQuaternion = new Quaternion();
 
-
-
 // ============================================================
 // SETUP MONITOR LIGHT
 // ============================================================
@@ -281,8 +277,7 @@ function SetupMonitorLight() {
     return;
   }
 
-
-  MonitorLight = new RectAreaLight(new Color("white"),1,1,1)
+  MonitorLight = new RectAreaLight(new Color("white"), 1, 1, 1);
 
   // ----------------------------------------------------------
   // WORLD POSITION
@@ -291,8 +286,6 @@ function SetupMonitorLight() {
   MonitorScreen.getWorldPosition(MonitorWorldPosition);
 
   MonitorLight.position.copy(MonitorWorldPosition);
-
-
 
   // ----------------------------------------------------------
   // WORLD SCALE
@@ -327,11 +320,10 @@ function SetupMonitorLight() {
   // LIGHT ROTATION
   // ----------------------------------------------------------
 
-
-  MonitorLight.position.z -= .001
+  MonitorLight.position.z -= 0.001;
 
   MonitorLight.rotation.x = Math.PI;
-  MonitorLight.rotation.y = Math.PI - .02;
+  MonitorLight.rotation.y = Math.PI - 0.02;
 
   // ----------------------------------------------------------
   // SCREEN SIZE
@@ -368,7 +360,6 @@ function SetupMonitorLight() {
     scene.add(MonitorLightHelper);
   }
 
-  
   const MonitorLightPane = pane.addFolder({
     title: "Monitor Light",
     expanded: true,
@@ -393,27 +384,28 @@ function SetupMonitorLight() {
 // ============================================================
 
 function SetupLights(model) {
-
-  const DeskFocus = model.getObjectByName("desk_focus_sphere")
+  const DeskFocus = model.getObjectByName("desk_focus_sphere");
 
   DeskFocus.visible = false;
 
-  const Directional1 = new DirectionalLight(0xffffff,1)
-  Directional1.position.set(-4,4,.2)
+  const Directional1 = new DirectionalLight(0xffffff, 1);
+  Directional1.position.set(-4, 4, 0.2);
   Directional1.target = DeskFocus;
 
-  const Directional1Helper = new DirectionalLightHelper(Directional1,.1,new Color("red"))
+  const Directional1Helper = new DirectionalLightHelper(
+    Directional1,
+    0.1,
+    new Color("red"),
+  );
 
-  LightningFolder.addBinding(Directional1,"intensity",{
-    min:0,
-    max:4,
-    step:.001,
-    label:"Directional Light"
-  })
+  LightningFolder.addBinding(Directional1, "intensity", {
+    min: 0,
+    max: 4,
+    step: 0.001,
+    label: "Directional Light",
+  });
 
-
-  scene.add(Directional1,Directional1Helper)
-
+  scene.add(Directional1, Directional1Helper);
 
   SetupMonitorLight();
 }
@@ -438,7 +430,6 @@ GLB.load(
     // DEBUG
     // --------------------------------------------------------
 
-
     // --------------------------------------------------------
     // MODEL MATERIALS
     // --------------------------------------------------------
@@ -459,11 +450,19 @@ GLB.load(
         return;
       }
 
+      console.log(Node.name)
+
+      Node.material = StanMat;
+
+      Node.material = Materials[Node.name] || Node.material;
+
+      if(Node.name.includes("keyboard_key")) {
+        Node.material = Materials.keyboard_key
+      }
+
       // ----------------------------------------------------
       // NORMAL MESH
       // ----------------------------------------------------
-
-      Node.material = StanMat;
 
       Node.castShadow = true;
 
