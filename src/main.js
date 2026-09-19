@@ -2,7 +2,6 @@ import "./style.css";
 import * as THREE from "three";
 
 import {
-  AmbientLight,
   Box3,
   Color,
   DirectionalLight,
@@ -53,6 +52,8 @@ const pane = new Pane();
 
 // pane.hidden = true;
 
+pane.element.style.zIndex = "9999999999999999999999999"
+
 const canvas = document.querySelector("canvas");
 
 const { innerWidth, innerHeight } = window;
@@ -94,7 +95,12 @@ stats.dom.style.zIndex = "9999";
 
 const scene = new Scene();
 
-scene.background = new Color("#3d3d3d");
+scene.background = new Color("#0a0a0a");
+
+pane.addBinding(scene,'background',{
+  color:{ type:"float" },
+  label:"Scene Background"
+})
 
 // ============================================================
 // CAMERA
@@ -117,6 +123,8 @@ const Draco = new DRACOLoader(Manager);
 const GLB = new GLTFLoader(Manager);
 
 const TextureLoader = new THREE.TextureLoader(Manager);
+
+const AppleLogoTexture = TextureLoader.load("/textures/applelogo.png");
 
 Draco.setDecoderPath("/draco/");
 
@@ -232,6 +240,8 @@ scene.add(Ground, MetaBall, Torus, Pot);
 let MonitorLightHelper = null;
 let MonitorLight = null;
 let MonitorScreen = null;
+let Monitor2Screen = null;
+let Monitor2Light = null;
 let DeskFocusSphere = null;
 
 // ============================================================
@@ -277,7 +287,7 @@ function SetupMonitorLight() {
     return;
   }
 
-  MonitorLight = new RectAreaLight(new Color("white"), 1, 1, 1);
+  MonitorLight = new RectAreaLight(new Color("red"), 1, 1, 1);
 
   // ----------------------------------------------------------
   // WORLD POSITION
@@ -389,7 +399,7 @@ function SetupLights(model) {
   DeskFocus.visible = false;
 
   const Directional1 = new DirectionalLight(0xffffff, 1);
-  Directional1.position.set(-4, 4, 0.2);
+  Directional1.position.set(-4, 4, -3);
   Directional1.target = DeskFocus;
 
   const Directional1Helper = new DirectionalLightHelper(
@@ -426,6 +436,8 @@ GLB.load(
 
     MonitorScreen = Model.getObjectByName("monitor_screen");
 
+    const AppleLogo = Model.getObjectByName("apple_logo_plane")
+
     // --------------------------------------------------------
     // DEBUG
     // --------------------------------------------------------
@@ -450,11 +462,13 @@ GLB.load(
         return;
       }
 
-      console.log(Node.name)
-
       Node.material = StanMat;
 
       Node.material = Materials[Node.name] || Node.material;
+
+      if(Materials[Node.name]) {
+        console.log(Node.name)
+      }
 
       if(Node.name.includes("keyboard_key")) {
         Node.material = Materials.keyboard_key
@@ -468,6 +482,8 @@ GLB.load(
 
       Node.receiveShadow = true;
     });
+
+    AppleLogo.material.uniforms.uMap.value = AppleLogoTexture;
 
     // --------------------------------------------------------
     // ADD MODEL BEFORE WORLD-SPACE CALCULATIONS
