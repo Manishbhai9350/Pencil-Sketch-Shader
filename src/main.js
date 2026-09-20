@@ -36,7 +36,7 @@ import {
 
 import Stats from "three/examples/jsm/libs/stats.module.js";
 
-import { GetSceneBounds } from "./utils";
+import { computeMeshNormal, GetSceneBounds } from "./utils";
 import { GetToonMaterial } from "./material/Toon";
 import { Pane } from "tweakpane";
 import { GetToonPass } from "./postprocessing/ToonPass";
@@ -50,9 +50,9 @@ import { Materials } from "./material/Scene.materials";
 
 const pane = new Pane();
 
-// pane.hidden = true;
+pane.hidden = true;
 
-pane.element.style.zIndex = "9999999999999999999999999"
+pane.element.style.zIndex = "9999999999999999999999999";
 
 const canvas = document.querySelector("canvas");
 
@@ -97,10 +97,10 @@ const scene = new Scene();
 
 scene.background = new Color("#0a0a0a");
 
-pane.addBinding(scene,'background',{
-  color:{ type:"float" },
-  label:"Scene Background"
-})
+pane.addBinding(scene, "background", {
+  color: { type: "float" },
+  label: "Scene Background",
+});
 
 // ============================================================
 // CAMERA
@@ -244,6 +244,8 @@ let Monitor2Screen = null;
 let Monitor2Light = null;
 let DeskFocusSphere = null;
 
+let Monitors = [];
+
 // ============================================================
 // LIGHT CONTROLS
 // ============================================================
@@ -271,43 +273,44 @@ let Model = null;
 // WORLD SPACE TRANSFORM DATA
 // ============================================================
 
-const MonitorWorldPosition = new Vector3();
-
-const MonitorWorldScale = new Vector3();
-
-const MonitorWorldQuaternion = new Quaternion();
-
 // ============================================================
 // SETUP MONITOR LIGHT
 // ============================================================
 
 function SetupMonitorLight() {
-  if (!MonitorScreen) {
+  if (!Monitors[0].screen || !Monitors[1].screen) {
     console.warn("monitor_screen not found.");
     return;
   }
 
-  MonitorLight = new RectAreaLight(new Color("red"), 1, 1, 1);
+  Monitors[0].light = new RectAreaLight(new Color("red"), 1, 1, 1);
+  Monitors[1].light = new RectAreaLight(new Color("green"), 1, 1, 1);
 
   // ----------------------------------------------------------
   // WORLD POSITION
   // ----------------------------------------------------------
 
-  MonitorScreen.getWorldPosition(MonitorWorldPosition);
+  const Monitor1Screen = Monitors[0].screen;
+  const Monitor2Screen = Monitors[1].screen;
+  Monitor1Screen.getWorldPosition(Monitors[0].worldPosition);
+  Monitor2Screen.getWorldPosition(Monitors[1].worldPosition);
 
-  MonitorLight.position.copy(MonitorWorldPosition);
+  Monitors[0].light.position.copy(Monitors[0].worldPosition);
+  Monitors[1].light.position.copy(Monitors[1].worldPosition);
 
   // ----------------------------------------------------------
   // WORLD SCALE
   // ----------------------------------------------------------
 
-  MonitorScreen.getWorldScale(MonitorWorldScale);
+  Monitor1Screen.getWorldScale(Monitors[0].worldScale);
+  Monitor2Screen.getWorldScale(Monitors[1].worldScale);
 
   // ----------------------------------------------------------
   // WORLD QUATERNION
   // ----------------------------------------------------------
 
-  MonitorScreen.getWorldQuaternion(MonitorWorldQuaternion);
+  Monitor1Screen.getWorldQuaternion(Monitors[0].worldQuaternion);
+  Monitor2Screen.getWorldQuaternion(Monitors[1].worldQuaternion);
 
   // ----------------------------------------------------------
   // SCREEN NORMAL
@@ -322,30 +325,28 @@ function SetupMonitorLight() {
     into world space.
   */
 
-  const MonitorNormal = new Vector3(0, 0, 1);
+  // const Monitor1Normal = new Vector3(0, 0, 1);
+  const Monitor1Normal = computeMeshNormal(Monitor1Screen);
+  const Monitor2Normal = computeMeshNormal(Monitor2Screen);
 
-  MonitorNormal.applyQuaternion(MonitorWorldQuaternion).normalize();
+  Monitor1Normal.applyQuaternion(Monitors[0].worldQuaternion).normalize();
+  Monitor2Normal.applyQuaternion(Monitors[1].worldQuaternion).normalize();
 
   // ----------------------------------------------------------
   // LIGHT ROTATION
   // ----------------------------------------------------------
 
-  MonitorLight.position.z -= 0.001;
+  // Position light at the screen
+  Monitors[0].light.position.copy(Monitors[0].worldPosition);
+  Monitors[1].light.position.copy(Monitors[1].worldPosition);
 
-  MonitorLight.rotation.x = Math.PI;
-  MonitorLight.rotation.y = Math.PI - 0.02;
-
-  // ----------------------------------------------------------
-  // SCREEN SIZE
-  // ----------------------------------------------------------
-
-  const ScreenBox = new Box3();
-
-  ScreenBox.setFromObject(MonitorScreen);
-
-  const ScreenSize = new Vector3();
-
-  ScreenBox.getSize(ScreenSize);
+  // Orient light to emit along the screen normal (towards the room)
+  Monitors[0].light.lookAt(
+    Monitors[0].worldPosition.clone().add(Monitor1Normal),
+  );
+  Monitors[1].light.lookAt(
+    Monitors[1].worldPosition.clone().add(Monitor2Normal),
+  );
 
   /*
     This assumes the monitor screen
@@ -355,33 +356,55 @@ function SetupMonitorLight() {
     manually tune these values.
   */
 
-  MonitorLight.width = ScreenSize.x;
+  Monitors.map(({ screen, light, lightHelper }) => {
+    // ----------------------------------------------------------
+    // SCREEN SIZE
+    // ----------------------------------------------------------
 
-  MonitorLight.height = ScreenSize.y;
+    const ScreenBox = new Box3();
 
-  MonitorLight.updateMatrixWorld(true);
+    ScreenBox.setFromObject(screen);
 
-  MonitorLight.rotation.set(0, 0.02, 0);
-  MonitorLight.position.z -= 0.005;
+    const ScreenSize = new Vector3();
 
-  if (!MonitorLightHelper) {
-    MonitorLightHelper = new RectAreaLightHelper(MonitorLight);
+    ScreenBox.getSize(ScreenSize);
 
-    scene.add(MonitorLightHelper);
-  }
+    light.width = ScreenSize.x;
+
+    light.height = ScreenSize.y;
+
+    light.updateMatrixWorld(true);
+
+    light.rotation.set(0, 0.02, 0);
+    light.position.z -= 0.005;
+
+    if (!lightHelper) {
+      lightHelper = new RectAreaLightHelper(light);
+
+      scene.add(lightHelper);
+    }
+  });
+
+  Monitors[0].light.position.x += 0.2;
+
+  console.log(Monitor1Normal.x,Monitor1Normal.y,Monitor1Normal.z)
+
+  Monitors[1].light.position.x += Monitor2Normal.x * 0.002;
+  Monitors[1].light.position.y += Monitor2Normal.y * 0.002;
+  Monitors[1].light.position.z += Monitor2Normal.z * 0.002;
 
   const MonitorLightPane = pane.addFolder({
     title: "Monitor Light",
     expanded: true,
   });
 
-  MonitorLightPane.addBinding(MonitorLight, "color", {
+  MonitorLightPane.addBinding(Monitors[0].light, "color", {
     color: {
       type: "float",
     },
     label: "Color",
   });
-  MonitorLightPane.addBinding(MonitorLight, "intensity", {
+  MonitorLightPane.addBinding(Monitors[0].light, "intensity", {
     min: 0,
     max: 1,
     step: 0.001,
@@ -436,7 +459,24 @@ GLB.load(
 
     MonitorScreen = Model.getObjectByName("monitor_screen");
 
-    const AppleLogo = Model.getObjectByName("apple_logo_plane")
+    Monitors[0] = {
+      screen: Model.getObjectByName("monitor_screen"),
+      light: Model.getObjectByName("monitor_bar_light_light"),
+      lightHelper: null,
+      worldPosition: new Vector3(),
+      worldScale: new Vector3(),
+      worldQuaternion: new Quaternion(),
+    };
+    Monitors[1] = {
+      screen: Model.getObjectByName("monitor_2_screen"),
+      light: Model.getObjectByName("monitor_bar_light_light_2"),
+      lightHelper: null,
+      worldPosition: new Vector3(),
+      worldScale: new Vector3(),
+      worldQuaternion: new Quaternion(),
+    };
+
+    const AppleLogo = Model.getObjectByName("apple_logo_plane");
 
     // --------------------------------------------------------
     // DEBUG
@@ -466,12 +506,10 @@ GLB.load(
 
       Node.material = Materials[Node.name] || Node.material;
 
-      if(Materials[Node.name]) {
-        console.log(Node.name)
-      }
+      console.log(Node.name);
 
-      if(Node.name.includes("keyboard_key")) {
-        Node.material = Materials.keyboard_key
+      if (Node.name.includes("keyboard_key")) {
+        Node.material = Materials.keyboard_key;
       }
 
       // ----------------------------------------------------
@@ -484,6 +522,8 @@ GLB.load(
     });
 
     AppleLogo.material.uniforms.uMap.value = AppleLogoTexture;
+    const scale = 0.1;
+    AppleLogo.scale.set(scale, scale, scale);
 
     // --------------------------------------------------------
     // ADD MODEL BEFORE WORLD-SPACE CALCULATIONS
@@ -510,7 +550,7 @@ GLB.load(
 // ============================================================
 
 let Postprocessing = {
-  enabled: true,
+  enabled: false,
 };
 
 pane.addBinding(Postprocessing, "enabled", {
