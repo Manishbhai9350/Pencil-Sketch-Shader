@@ -237,11 +237,6 @@ scene.add(Ground, MetaBall, Torus, Pot);
 // LIGHT DEBUG HELPERS
 // ============================================================
 
-let MonitorLightHelper = null;
-let MonitorLight = null;
-let MonitorScreen = null;
-let Monitor2Screen = null;
-let Monitor2Light = null;
 let DeskFocusSphere = null;
 
 let Monitors = [];
@@ -356,7 +351,15 @@ function SetupMonitorLight() {
     manually tune these values.
   */
 
-  Monitors.map(({ screen, light, lightHelper }) => {
+  Monitors[0].light.position.x += Monitor1Normal.x * 0.005;
+  Monitors[0].light.position.y += Monitor1Normal.y * 0.005;
+  Monitors[0].light.position.z += Monitor1Normal.z * 0.005;
+
+  Monitors[1].light.position.x += Monitor2Normal.x * 0.005;
+  Monitors[1].light.position.y += Monitor2Normal.y * 0.005;
+  Monitors[1].light.position.z += Monitor2Normal.z * 0.005;
+
+  Monitors = Monitors.map(({ screen, light, lightHelper, ...rest }) => {
     // ----------------------------------------------------------
     // SCREEN SIZE
     // ----------------------------------------------------------
@@ -383,15 +386,16 @@ function SetupMonitorLight() {
 
       scene.add(lightHelper);
     }
+
+    return {
+      screen,
+      light,
+      lightHelper,
+      ...rest,
+    };
   });
 
-  Monitors[0].light.position.x += 0.2;
-
-  console.log(Monitor1Normal.x,Monitor1Normal.y,Monitor1Normal.z)
-
-  Monitors[1].light.position.x += Monitor2Normal.x * 0.002;
-  Monitors[1].light.position.y += Monitor2Normal.y * 0.002;
-  Monitors[1].light.position.z += Monitor2Normal.z * 0.002;
+  console.log(Monitors[1]);
 
   const MonitorLightPane = pane.addFolder({
     title: "Monitor Light",
@@ -447,17 +451,35 @@ function SetupLights(model) {
 // LOAD GLB
 // ============================================================
 
+let CodingAnimation = null;
+let CharacterMixer = null;
+let CodingAnimationClip = null;
+
 GLB.load(
   "/models/scene.glb",
 
   (glb) => {
     Model = glb.scene;
 
+    let CharacterRoot = null;
+
+    Model.traverse((n) => {
+      if (n.name == "man_with_chair_animated") {
+        CharacterRoot = n;
+      }
+    });
+
+    CodingAnimation = glb.animations.find(
+      (a) => a.name == "character_coding_animation",
+    );
+    CharacterMixer = new THREE.AnimationMixer(CharacterRoot);
+    CodingAnimationClip = CharacterMixer.clipAction(CodingAnimation);
+
+    CodingAnimationClip.play();
+
     // --------------------------------------------------------
     // FIND OBJECTS
     // --------------------------------------------------------
-
-    MonitorScreen = Model.getObjectByName("monitor_screen");
 
     Monitors[0] = {
       screen: Model.getObjectByName("monitor_screen"),
@@ -615,6 +637,10 @@ function Animate() {
   // ----------------------------------------------------------
 
   ToonPass.update(DT, SceneNormalTexture);
+
+  if (CharacterMixer) {
+    CharacterMixer.update(DT);
+  }
 
   // ----------------------------------------------------------
   // RENDER
