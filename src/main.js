@@ -50,7 +50,7 @@ import { Materials } from "./material/Scene.materials";
 
 const pane = new Pane();
 
-pane.hidden = true;
+pane.hidden = false;
 
 pane.element.style.zIndex = "9999999999999999999999999";
 
@@ -454,6 +454,7 @@ function SetupLights(model) {
 let CodingAnimation = null;
 let CharacterMixer = null;
 let CodingAnimationClip = null;
+let ChairMovingAnimationClip = null;
 
 GLB.load(
   "/models/scene.glb",
@@ -461,20 +462,17 @@ GLB.load(
   (glb) => {
     Model = glb.scene;
 
-    let CharacterRoot = null;
-
-    Model.traverse((n) => {
-      if (n.name == "man_with_chair_animated") {
-        CharacterRoot = n;
-      }
-    });
-
+    const ChairAnimation = glb.animations.find(
+      (a) => a.name == "Animation",
+    )
     CodingAnimation = glb.animations.find(
       (a) => a.name == "character_coding_animation",
     );
-    CharacterMixer = new THREE.AnimationMixer(CharacterRoot);
+    CharacterMixer = new THREE.AnimationMixer(glb.scene);
     CodingAnimationClip = CharacterMixer.clipAction(CodingAnimation);
+    ChairMovingAnimationClip = CharacterMixer.clipAction(ChairAnimation)
 
+    ChairMovingAnimationClip.play();
     CodingAnimationClip.play();
 
     // --------------------------------------------------------
@@ -572,7 +570,7 @@ GLB.load(
 // ============================================================
 
 let Postprocessing = {
-  enabled: false,
+  enabled: true,
 };
 
 pane.addBinding(Postprocessing, "enabled", {
