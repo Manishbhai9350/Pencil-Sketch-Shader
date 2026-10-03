@@ -43,6 +43,7 @@ import { GetToonPass } from "./postprocessing/ToonPass";
 import { CaptureNormals } from "./RT/normal.rt";
 import { CircleOfConfusionMaterial } from "postprocessing";
 import { Materials } from "./material/Scene.materials";
+import { CreateAudio } from "./audio/audio";
 
 // ============================================================
 // CONFIG
@@ -526,8 +527,6 @@ GLB.load(
 
       Node.material = Materials[Node.name] || Node.material;
 
-      console.log(Node.name);
-
       if (Node.name.includes("keyboard_key")) {
         Node.material = Materials.keyboard_key;
       }
@@ -565,6 +564,12 @@ GLB.load(
   },
 );
 
+// Audio System;
+
+const howl = CreateAudio();
+
+// howl.play()
+
 // ============================================================
 // POST PROCESSING
 // ============================================================
@@ -595,6 +600,11 @@ let PreviousTime = clock.getElapsedTime();
 // ANIMATION
 // ============================================================
 
+const CodingAnimationDuration = 9;
+let Time = 0;
+let TargetKeyboardVolume = 1;
+let KeyboardVolume = 1;
+
 function Animate() {
   stats.begin();
 
@@ -605,6 +615,7 @@ function Animate() {
   const CurrentTime = clock.getElapsedTime();
 
   const DT = CurrentTime - PreviousTime;
+
 
   PreviousTime = CurrentTime;
 
@@ -637,8 +648,32 @@ function Animate() {
   ToonPass.update(DT, SceneNormalTexture);
 
   if (CharacterMixer) {
+    Time += DT;
+    Time %= CodingAnimationDuration;
+
+    if(Time <= CodingAnimationClip.time) {
+      TargetKeyboardVolume = 1;
+    } else {
+      TargetKeyboardVolume = 0;
+    }
+
     CharacterMixer.update(DT);
+
   }
+
+  KeyboardVolume += (TargetKeyboardVolume - KeyboardVolume) * .1;
+
+  if(KeyboardVolume <= 0.009) {
+    KeyboardVolume = 0;
+  } 
+  if(KeyboardVolume >= .99) {
+    KeyboardVolume = 0;
+  }
+
+  howl.volume(KeyboardVolume)
+
+  console.log(CodingAnimationClip)
+  
 
   // ----------------------------------------------------------
   // RENDER
@@ -649,6 +684,8 @@ function Animate() {
   } else {
     renderer.render(scene, camera);
   }
+
+
 
   stats.end();
 
