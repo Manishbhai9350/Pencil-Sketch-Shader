@@ -2,10 +2,10 @@ import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { ShaderPass } from "three/addons/postprocessing/ShaderPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
-import { Pane } from "tweakpane";
 import { Vector2 } from "three";
 import { Uniform } from "three";
 import { Color } from "three";
+import GUI from "lil-gui";
 
 const ToonPass = {
   uniforms: {
@@ -13,12 +13,12 @@ const ToonPass = {
     tNormal: new Uniform(null),
     uNoise: new Uniform(null),
     uTime: new Uniform(0),
-    uColorA: new Uniform(new Color("#f1f1f1")) /* Environment Color */,
-    uColorB: new Uniform(new Color("#1e1ea6")) /* Border Color */,
+    uColorA: new Uniform(new Color("#B7BCC3")) /* Environment Color */,
+    uColorB: new Uniform(new Color("#2839B3")) /* Border Color */,
     uResolution: new Uniform(new Vector2(innerWidth, innerHeight)),
 
     uShadowPower: new Uniform(.2),
-    uShadowThreshold: new Uniform(.57),
+    uShadowThreshold: new Uniform(.86),
     uPencilIntensity: new Uniform(.11),
   },
   vertexShader: /* glsl */ `
@@ -176,7 +176,7 @@ const ToonPass = {
         // Noise On Light Part;
 
         float LightNoise = random(uv + uTime);
-        FinalColor -= LightNoise * (1.0 - ShadowIntensity) * .1;
+        // FinalColor -= LightNoise * (1.0 - ShadowIntensity) * .1;
 
         // FinalColor = vec3(ToonShadow);
         // FinalColor = vec3(ShadowIntensity);
@@ -195,7 +195,7 @@ const ToonPass = {
 
 export const GetToonPass = (
   composer = new EffectComposer(),
-  pane = new Pane(),
+  lil = new GUI(),
   noiseTexture = null,
 ) => {
   // Place AFTER OutputPass so you're working in display (sRGB) space
@@ -208,36 +208,15 @@ export const GetToonPass = (
 
   toonPass.uniforms["uNoise"].value = noiseTexture;
 
-  const ToonFolder = pane.addFolder({ title: "Toon Setting", expanded: false });
+  const ToonFolder = lil.addFolder("Sobel Settings");
 
-  ToonFolder.addBinding(toonPass.uniforms.uColorA, "value", {
-    color: { type: "float" },
-    label: "Env Color",
-  });
-  ToonFolder.addBinding(toonPass.uniforms.uColorB, "value", {
-    color: { type: "float" },
-    label: "Border Color",
-  });
+  ToonFolder.addColor(toonPass.uniforms.uColorA, "value");
+  ToonFolder.addColor(toonPass.uniforms.uColorB, "value");
 
 
-  ToonFolder.addBinding(toonPass.uniforms.uShadowPower, "value", {
-    min:0,
-    max:2,
-    step:.001,
-    label: "Shadow Power",
-  });
-  ToonFolder.addBinding(toonPass.uniforms.uShadowThreshold, "value", {
-    min:0,
-    max:1.1,
-    step:.001,
-    label: "Shadow Threshold",
-  });
-  ToonFolder.addBinding(toonPass.uniforms.uPencilIntensity, "value", {
-    min:0,
-    max:.5,
-    step:.01,
-    label: "Pencil Noise",
-  });
+  ToonFolder.add(toonPass.uniforms.uShadowPower, "value").min(0).max(2).step(.001).name("Shadow Power")
+  ToonFolder.add(toonPass.uniforms.uShadowThreshold, "value").min(0).max(1.4).step(.001).name("Shadow Threshold")
+  ToonFolder.add(toonPass.uniforms.uPencilIntensity, "value").min(0).max(.5).step(.001).name("Shadow Noise")
 
   const Update = (DT = 0, SceneNormalTexture) => {
     toonPass.uniforms["tNormal"].value = SceneNormalTexture;

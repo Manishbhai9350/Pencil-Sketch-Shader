@@ -1,717 +1,560 @@
 import "./style.css";
-import * as THREE from "three";
 
 import {
+  Matrix4,
+  AnimationMixer,
   Box3,
+  Clock,
   Color,
   DirectionalLight,
   DirectionalLightHelper,
   IcosahedronGeometry,
+  LoadingManager,
   Mesh,
   MeshBasicMaterial,
+  MeshPhysicalMaterial,
   MeshStandardMaterial,
+  PCFSoftShadowMap,
+  PerspectiveCamera,
   PlaneGeometry,
+  Quaternion,
   RectAreaLight,
   Scene,
-  SpotLight,
-  SpotLightHelper,
+  TextureLoader,
   TorusKnotGeometry,
   Vector3,
   WebGLRenderer,
-  PerspectiveCamera,
-  Quaternion,
-  Clock,
 } from "three";
 
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader";
 import { DRACOLoader } from "three/examples/jsm/loaders/DRACOLoader";
-
 import {
   EffectComposer,
   OrbitControls,
   RenderPass,
   TeapotGeometry,
   RectAreaLightHelper,
+  RectAreaLightUniformsLib,
 } from "three/examples/jsm/Addons.js";
-
 import Stats from "three/examples/jsm/libs/stats.module.js";
+import GUI from "lil-gui";
 
 import { computeMeshNormal, GetSceneBounds } from "./utils";
 import { GetToonMaterial } from "./material/Toon";
-import { Pane } from "tweakpane";
+import { Materials } from "./material/Scene.materials";
 import { GetToonPass } from "./postprocessing/ToonPass";
 import { CaptureNormals } from "./RT/normal.rt";
-import { CircleOfConfusionMaterial } from "postprocessing";
-import { Materials } from "./material/Scene.materials";
 import { CreateAudio } from "./audio/audio";
+import { Matrix3 } from "three";
+import { ArrowHelper } from "three";
+
+RectAreaLightUniformsLib.init();
 
 // ============================================================
-// CONFIG
+// CONSTANTS
 // ============================================================
 
-const pane = new Pane();
+const ANIMATION_FPS = 24; // match your Blender export FPS
+const TYPING_VOLUME = 0.3;
+const MONITOR_LIGHT_OFFSET = 0.005;
 
-pane.hidden = false;
+/**
+ * Character animation timeline, in Blender frames.
+ * Each phase lasts until its `endFrame`; anything after the last one is IDLE_FINAL.
+ */
+const TIMELINE = [
+  { name: "CODING_PHASE_1", endFrame: 50, typing: true },
+  { name: "MOVING_CHAIR_BACK", endFrame: 64 },
+  { name: "IDLE_STILL_1", endFrame: 98 },
+  { name: "MOVING_CHAIR_FORWARD", endFrame: 108 },
+  { name: "CODING_PHASE_2", endFrame: 158, typing: true },
+  { name: "MOVING_CHAIR_BACK_2", endFrame: 172 },
+  { name: "IDLE_STILL_2", endFrame: 204 },
+  { name: "MOVING_CHAIR_FORWARD_2", endFrame: 218 },
+].map((phase) => ({ ...phase, endTime: phase.endFrame / ANIMATION_FPS }));
 
-pane.element.style.zIndex = "9999999999999999999999999";
-
-const canvas = document.querySelector("canvas");
-
-const { innerWidth, innerHeight } = window;
-
-// ============================================================
-// RENDERER
-// ============================================================
-
-const renderer = new WebGLRenderer({
-  canvas,
-  antialias: true,
-  alpha: true,
-});
-
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-renderer.setSize(innerWidth, innerHeight);
-
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const FINAL_PHASE = { name: "IDLE_FINAL", typing: false };
 
 // ============================================================
-// FPS ANALYSER
+// GUI HELPERS
 // ============================================================
 
-const stats = new Stats();
+/**
+ * lil-gui edits raw RGB values, which look wrong with three's color management.
+ * Bind a hex-string proxy instead and write back through Color.set().
+ */
+function addColorControl(folder, target, prop, label) {
+  const proxy = { value: `#${target[prop].getHexString()}` };
 
-stats.showPanel(0); // 0 = FPS
-document.body.appendChild(stats.dom);
-
-stats.dom.style.position = "fixed";
-stats.dom.style.left = "0px";
-stats.dom.style.top = "0px";
-stats.dom.style.zIndex = "9999";
-
-// ============================================================
-// SCENE
-// ============================================================
-
-const scene = new Scene();
-
-scene.background = new Color("#0a0a0a");
-
-pane.addBinding(scene, "background", {
-  color: { type: "float" },
-  label: "Scene Background",
-});
+  return folder
+    .addColor(proxy, "value")
+    .name(label)
+    .onChange((value) => target[prop].set(value));
+}
 
 // ============================================================
-// CAMERA
+// CORE SETUP (renderer, stats, scene, camera, controls)
 // ============================================================
 
-const camera = new PerspectiveCamera(30, innerWidth / innerHeight, 0.1, 1000);
+function createRenderer(canvas) {
+  const renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true });
 
-camera.position.set(2.7, 1.7, -1.8);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = PCFSoftShadowMap;
 
-camera.lookAt(new Vector3(4, 0, -2));
+  return renderer;
+}
 
-// ============================================================
-// LOADERS
-// ============================================================
+function createStats() {
+  const stats = new Stats();
 
-const Manager = new THREE.LoadingManager();
+  stats.showPanel(0); // 0 = FPS
+  Object.assign(stats.dom.style, {
+    position: "fixed",
+    left: "0px",
+    top: "0px",
+    zIndex: "9999",
+  });
+  document.body.appendChild(stats.dom);
 
-const Draco = new DRACOLoader(Manager);
+  return stats;
+}
 
-const GLB = new GLTFLoader(Manager);
+function createCamera() {
+  const camera = new PerspectiveCamera(
+    30,
+    window.innerWidth / window.innerHeight,
+    0.1,
+    1000,
+  );
 
-const TextureLoader = new THREE.TextureLoader(Manager);
+  camera.position.set(2.7, 1.7, -1.8);
+  camera.lookAt(new Vector3(4, 0, -2));
 
-const AppleLogoTexture = TextureLoader.load("/textures/applelogo.png");
+  return camera;
+}
 
-Draco.setDecoderPath("/draco/");
+function createControls(camera, canvas) {
+  const controls = new OrbitControls(camera, canvas);
 
-Draco.setDecoderConfig({
-  type: "wasm",
-});
+  controls.target.set(-0.5, 0, 0);
+  controls.update();
 
-GLB.setDRACOLoader(Draco);
-
-// ============================================================
-// CONTROLS
-// ============================================================
-
-const Controls = new OrbitControls(camera, canvas);
-
-Controls.target.set(-0.5, 0, 0);
-
-Controls.update();
-
-// ============================================================
-// SCENE BOUNDS
-// ============================================================
-
-const { width: SceneWidth, height: SceneHeight } = GetSceneBounds(
-  renderer,
-  camera,
-);
-
-// ============================================================
-// TEXTURES
-// ============================================================
-
-const InkMap = TextureLoader.load("/textures/ink.jpg");
-
-const ScratchNoiseTexture = TextureLoader.load("/textures/noise_scratch.png");
+  return controls;
+}
 
 // ============================================================
-// TEST OBJECTS
+// ASSET LOADING
 // ============================================================
 
-const PotMaterial = GetToonMaterial(
-  {
-    color: "skyblue",
-  },
-  {
-    InkMap,
-  },
-);
+function createLoaders() {
+  const manager = new LoadingManager();
 
-const Pot = new Mesh(new TeapotGeometry(1), PotMaterial);
+  const draco = new DRACOLoader(manager);
+  draco.setDecoderPath("/draco/");
+  draco.setDecoderConfig({ type: "wasm" });
 
-Pot.castShadow = true;
+  const gltf = new GLTFLoader(manager);
+  gltf.setDRACOLoader(draco);
 
-const Ground = new Mesh(
-  new PlaneGeometry(100, 100),
-
-  new MeshStandardMaterial({
-    color: "white",
-  }),
-);
-
-Ground.rotation.x = -Math.PI / 2;
-
-Ground.position.y = -2.2;
-
-Ground.receiveShadow = true;
-
-const MetaBallMaterial = GetToonMaterial(
-  {
-    color: "yellow",
-  },
-  {
-    InkMap,
-  },
-);
-
-const MetaBall = new Mesh(new IcosahedronGeometry(1, 10), MetaBallMaterial);
-
-MetaBall.position.set(-4, 0, -2);
-
-MetaBall.castShadow = true;
-
-const Torus = new Mesh(
-  new TorusKnotGeometry(1.3, 0.3, 100, 100),
-
-  GetToonMaterial(
-    {
-      color: "limegreen",
-    },
-    {
-      InkMap,
-    },
-  ),
-);
-
-Torus.castShadow = true;
-
-// Hide test objects
-
-Pot.visible = false;
-Ground.visible = false;
-Torus.visible = false;
-MetaBall.visible = false;
-
-Pot.position.set(4, 0, -2);
-
-scene.add(Ground, MetaBall, Torus, Pot);
+  return { manager, gltf, texture: new TextureLoader(manager) };
+}
 
 // ============================================================
-// LIGHT DEBUG HELPERS
+// TEST OBJECTS (hidden by default)
 // ============================================================
 
-let DeskFocusSphere = null;
+function createTestObjects(inkMap) {
+  const toon = (color) => GetToonMaterial({ color }, { InkMap: inkMap });
 
-let Monitors = [];
+  const pot = new Mesh(new TeapotGeometry(1), toon("skyblue"));
+  pot.position.set(4, 0, -2);
+
+  const metaBall = new Mesh(new IcosahedronGeometry(1, 10), toon("yellow"));
+  metaBall.position.set(-4, 0, -2);
+
+  const torus = new Mesh(
+    new TorusKnotGeometry(1.3, 0.3, 100, 100),
+    toon("limegreen"),
+  );
+
+  const ground = new Mesh(
+    new PlaneGeometry(100, 100),
+    new MeshStandardMaterial({ color: "white" }),
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -2.2;
+  ground.receiveShadow = true;
+
+  [pot, metaBall, torus].forEach((mesh) => (mesh.castShadow = true));
+
+  const all = [ground, metaBall, torus, pot];
+  all.forEach((object) => (object.visible = false));
+
+  return { pot, torus, all };
+}
 
 // ============================================================
-// LIGHT CONTROLS
+// MODEL MATERIALS
 // ============================================================
 
-const LightningFolder = pane.addFolder({
-  title: "Lighting",
-  expanded: false,
-});
-
-// ============================================================
-// ADD LIGHTS
-// ============================================================
-
-// ============================================================
-// MODEL
-// ============================================================
-
-const StanMat = new MeshStandardMaterial({
+const defaultModelMaterial = new MeshPhysicalMaterial({
   color: "gray",
+  roughness: 1,
+  metalness: 0,
 });
 
-let Model = null;
+function applyModelMaterials(model) {
+  model.traverse((node) => {
+    if (!node.isMesh) return;
 
-// ============================================================
-// WORLD SPACE TRANSFORM DATA
-// ============================================================
-
-// ============================================================
-// SETUP MONITOR LIGHT
-// ============================================================
-
-function SetupMonitorLight() {
-  if (!Monitors[0].screen || !Monitors[1].screen) {
-    console.warn("monitor_screen not found.");
-    return;
-  }
-
-  Monitors[0].light = new RectAreaLight(new Color("red"), 1, 1, 1);
-  Monitors[1].light = new RectAreaLight(new Color("green"), 1, 1, 1);
-
-  // ----------------------------------------------------------
-  // WORLD POSITION
-  // ----------------------------------------------------------
-
-  const Monitor1Screen = Monitors[0].screen;
-  const Monitor2Screen = Monitors[1].screen;
-  Monitor1Screen.getWorldPosition(Monitors[0].worldPosition);
-  Monitor2Screen.getWorldPosition(Monitors[1].worldPosition);
-
-  Monitors[0].light.position.copy(Monitors[0].worldPosition);
-  Monitors[1].light.position.copy(Monitors[1].worldPosition);
-
-  // ----------------------------------------------------------
-  // WORLD SCALE
-  // ----------------------------------------------------------
-
-  Monitor1Screen.getWorldScale(Monitors[0].worldScale);
-  Monitor2Screen.getWorldScale(Monitors[1].worldScale);
-
-  // ----------------------------------------------------------
-  // WORLD QUATERNION
-  // ----------------------------------------------------------
-
-  Monitor1Screen.getWorldQuaternion(Monitors[0].worldQuaternion);
-  Monitor2Screen.getWorldQuaternion(Monitors[1].worldQuaternion);
-
-  // ----------------------------------------------------------
-  // SCREEN NORMAL
-  // ----------------------------------------------------------
-
-  /*
-    RectAreaLight emits from
-    its LOCAL +Z direction.
-
-    We first take the monitor's
-    local +Z and transform it
-    into world space.
-  */
-
-  // const Monitor1Normal = new Vector3(0, 0, 1);
-  const Monitor1Normal = computeMeshNormal(Monitor1Screen);
-  const Monitor2Normal = computeMeshNormal(Monitor2Screen);
-
-  Monitor1Normal.applyQuaternion(Monitors[0].worldQuaternion).normalize();
-  Monitor2Normal.applyQuaternion(Monitors[1].worldQuaternion).normalize();
-
-  // ----------------------------------------------------------
-  // LIGHT ROTATION
-  // ----------------------------------------------------------
-
-  // Position light at the screen
-  Monitors[0].light.position.copy(Monitors[0].worldPosition);
-  Monitors[1].light.position.copy(Monitors[1].worldPosition);
-
-  // Orient light to emit along the screen normal (towards the room)
-  Monitors[0].light.lookAt(
-    Monitors[0].worldPosition.clone().add(Monitor1Normal),
-  );
-  Monitors[1].light.lookAt(
-    Monitors[1].worldPosition.clone().add(Monitor2Normal),
-  );
-
-  /*
-    This assumes the monitor screen
-    is primarily X/Y oriented.
-
-    If the light size looks wrong,
-    manually tune these values.
-  */
-
-  Monitors[0].light.position.x += Monitor1Normal.x * 0.005;
-  Monitors[0].light.position.y += Monitor1Normal.y * 0.005;
-  Monitors[0].light.position.z += Monitor1Normal.z * 0.005;
-
-  Monitors[1].light.position.x += Monitor2Normal.x * 0.005;
-  Monitors[1].light.position.y += Monitor2Normal.y * 0.005;
-  Monitors[1].light.position.z += Monitor2Normal.z * 0.005;
-
-  Monitors = Monitors.map(({ screen, light, lightHelper, ...rest }) => {
-    // ----------------------------------------------------------
-    // SCREEN SIZE
-    // ----------------------------------------------------------
-
-    const ScreenBox = new Box3();
-
-    ScreenBox.setFromObject(screen);
-
-    const ScreenSize = new Vector3();
-
-    ScreenBox.getSize(ScreenSize);
-
-    light.width = ScreenSize.x;
-
-    light.height = ScreenSize.y;
-
-    light.updateMatrixWorld(true);
-
-    light.rotation.set(0, 0.02, 0);
-    light.position.z -= 0.005;
-
-    if (!lightHelper) {
-      lightHelper = new RectAreaLightHelper(light);
-
-      scene.add(lightHelper);
+    if (node.name === "desk_focus_sphere") {
+      node.material = new MeshBasicMaterial({ color: "purple" });
+      return;
     }
 
-    return {
-      screen,
-      light,
-      lightHelper,
-      ...rest,
-    };
-  });
+    node.material = Materials[node.name] ?? defaultModelMaterial;
 
-  console.log(Monitors[1]);
+    if (node.name.includes("keyboard_key")) {
+      node.material = Materials.keyboard_key;
+    }
 
-  const MonitorLightPane = pane.addFolder({
-    title: "Monitor Light",
-    expanded: true,
-  });
-
-  MonitorLightPane.addBinding(Monitors[0].light, "color", {
-    color: {
-      type: "float",
-    },
-    label: "Color",
-  });
-  MonitorLightPane.addBinding(Monitors[0].light, "intensity", {
-    min: 0,
-    max: 1,
-    step: 0.001,
-    label: "Intensity",
+    node.castShadow = true;
+    node.receiveShadow = true;
   });
 }
 
 // ============================================================
-// SETUP ALL LIGHTS
+// LIGHTS
 // ============================================================
 
-function SetupLights(model) {
-  const DeskFocus = model.getObjectByName("desk_focus_sphere");
+const DEBUG_MONITOR_NORMALS = true; // red arrows show each light's emit direction
 
-  DeskFocus.visible = false;
+/**
+ * World-space normal of a screen mesh, flipped to face `referencePoint`
+ * (the desk/room) if the mesh normal points the wrong way.
+ */
+function getScreenWorldNormal(screen, referencePoint) {
+  screen.updateWorldMatrix(true, false);
 
-  const Directional1 = new DirectionalLight(0xffffff, 1);
-  Directional1.position.set(-4, 4, -3);
-  Directional1.target = DeskFocus;
+  // Sum vertex normals (flat plane => all identical)
+  const normals = screen.geometry.attributes.normal;
+  const local = new Vector3();
+  const v = new Vector3();
 
-  const Directional1Helper = new DirectionalLightHelper(
-    Directional1,
-    0.1,
-    new Color("red"),
+  for (let i = 0; i < normals.count; i++) {
+    local.add(v.fromBufferAttribute(normals, i));
+  }
+  if (local.lengthSq() < 1e-6) local.set(0, 0, 1); // fallback
+
+  // Normal matrix handles non-uniform / negative scale correctly
+  const world = local
+    .normalize()
+    .applyMatrix3(new Matrix3().getNormalMatrix(screen.matrixWorld))
+    .normalize();
+
+  if (referencePoint) {
+    const center = new Vector3().setFromMatrixPosition(screen.matrixWorld);
+    if (world.dot(referencePoint.clone().sub(center)) < 0) world.negate();
+  }
+
+  return world;
+}
+
+/**
+ * Screen center and width/height in world units, independent of rotation.
+ * The two largest local extents are the screen plane.
+ */
+/**
+ * Center, size and orientation of a screen mesh in world space,
+ * built from the mesh's own axes so rotation/roll always matches.
+ */
+function getScreenFrame(screen, normal) {
+  screen.updateWorldMatrix(true, false);
+
+  const { geometry, matrixWorld } = screen;
+  geometry.computeBoundingBox();
+
+  const box = geometry.boundingBox;
+  const size = box.getSize(new Vector3());
+  const localSize = [size.x, size.y, size.z];
+
+  // World direction + world-space extent for each local axis
+  const axes = [0, 1, 2].map((i) => {
+    const column = new Vector3().setFromMatrixColumn(matrixWorld, i);
+    const scale = column.length();
+
+    return { dir: column.divideScalar(scale), extent: localSize[i] * scale };
+  });
+
+  // Thinnest axis = screen depth; the other two span the screen plane
+  const [, planeA, planeB] = [...axes].sort((a, b) => a.extent - b.extent);
+
+  // The in-plane axis closest to world up is the screen's height
+  const [heightAxis, widthAxis] =
+    Math.abs(planeA.dir.y) >= Math.abs(planeB.dir.y)
+      ? [planeA, planeB]
+      : [planeB, planeA];
+
+  // RectAreaLight emits along its local -Z, so +Z = -normal
+  const z = normal.clone().negate();
+  const y = heightAxis.dir
+    .clone()
+    .addScaledVector(normal, -heightAxis.dir.dot(normal)) // keep it perpendicular
+    .normalize();
+  const x = new Vector3().crossVectors(y, z);
+
+  const quaternion = new Quaternion().setFromRotationMatrix(
+    new Matrix4().makeBasis(x, y, z),
   );
 
-  LightningFolder.addBinding(Directional1, "intensity", {
-    min: 0,
-    max: 4,
-    step: 0.001,
-    label: "Directional Light",
+  // Geometry center rather than object origin (pivots are often offset)
+  const center = screen.localToWorld(box.getCenter(new Vector3()));
+
+  return {
+    center,
+    quaternion,
+    width: widthAxis.extent,
+    height: heightAxis.extent,
+  };
+}
+
+function createMonitorLight(screen, scene, referencePoint) {
+  const normal = getScreenWorldNormal(screen, referencePoint);
+  const { center, quaternion, width, height } = getScreenFrame(screen, normal);
+
+  const light = new RectAreaLight(new Color("white"), 10, width, height);
+
+  light.position.copy(center).addScaledVector(normal, MONITOR_LIGHT_OFFSET);
+  light.quaternion.copy(quaternion);
+  light.updateMatrixWorld(true);
+
+  const helper = new RectAreaLightHelper(light);
+  scene.add(light, helper);
+
+  if (DEBUG_MONITOR_NORMALS) {
+    scene.add(new ArrowHelper(normal, light.position, 0.5, 0xff0000));
+    console.log(screen.name, { width, height });
+  }
+
+  return { screen, light, helper };
+}
+
+function setupMonitorLights(model, scene, gui) {
+  const screens = ["monitor_screen", "monitor_2_screen"].map((name) =>
+    model.getObjectByName(name),
+  );
+
+  if (screens.some((screen) => !screen)) {
+    console.warn("Monitor screen(s) not found.");
+    return [];
+  }
+
+  // Screens should face the desk, so use it as the "inside the room" reference
+  const deskFocus = model.getObjectByName("desk_focus_sphere");
+  const referencePoint = deskFocus?.getWorldPosition(new Vector3());
+
+  const monitors = screens.map((screen) =>
+    createMonitorLight(screen, scene, referencePoint),
+  );
+
+  monitors.forEach(({ light }, index) => {
+    const folder = gui.addFolder(`Monitor ${index + 1} Light`);
+
+    addColorControl(folder, light, "color", "Color");
+    folder.add(light, "intensity", 0, 10, 0.001).name("Intensity");
   });
 
-  scene.add(Directional1, Directional1Helper);
+  return monitors;
+}
 
-  SetupMonitorLight();
+function setupDirectionalLight(model, scene, gui) {
+  const deskFocus = model.getObjectByName("desk_focus_sphere");
+  deskFocus.visible = false;
+
+  const light = new DirectionalLight(0xffffff, 1);
+  light.position.set(-4, 4, -3);
+  light.target = deskFocus;
+
+  const helper = new DirectionalLightHelper(light, 0.1, new Color("red"));
+
+  gui
+    .addFolder("Lighting")
+    .close()
+    .add(light, "intensity", 0, 4, 0.001)
+    .name("Directional Light");
+
+  scene.add(light, helper);
 }
 
 // ============================================================
-// LOAD GLB
+// CHARACTER ANIMATION
 // ============================================================
 
-let CodingAnimation = null;
-let CharacterMixer = null;
-let CodingAnimationClip = null;
-let ChairMovingAnimationClip = null;
+function createCharacterAnimation(glb) {
+  const mixer = new AnimationMixer(glb.scene);
 
-GLB.load(
-  "/models/scene.glb",
+  const findClip = (name) => glb.animations.find((clip) => clip.name === name);
 
-  (glb) => {
-    Model = glb.scene;
+  const chairAction = mixer.clipAction(findClip("Animation"));
+  const codingAction = mixer.clipAction(findClip("character_coding_animation"));
 
-    const ChairAnimation = glb.animations.find(
-      (a) => a.name == "Animation",
-    )
-    CodingAnimation = glb.animations.find(
-      (a) => a.name == "character_coding_animation",
-    );
-    CharacterMixer = new THREE.AnimationMixer(glb.scene);
-    CodingAnimationClip = CharacterMixer.clipAction(CodingAnimation);
-    ChairMovingAnimationClip = CharacterMixer.clipAction(ChairAnimation)
+  chairAction.play();
+  codingAction.play();
 
-    ChairMovingAnimationClip.play();
-    CodingAnimationClip.play();
+  return { mixer, codingAction };
+}
 
-    // --------------------------------------------------------
-    // FIND OBJECTS
-    // --------------------------------------------------------
+function getTimelinePhase(time) {
+  return TIMELINE.find((phase) => time < phase.endTime) ?? FINAL_PHASE;
+}
 
-    Monitors[0] = {
-      screen: Model.getObjectByName("monitor_screen"),
-      light: Model.getObjectByName("monitor_bar_light_light"),
-      lightHelper: null,
-      worldPosition: new Vector3(),
-      worldScale: new Vector3(),
-      worldQuaternion: new Quaternion(),
-    };
-    Monitors[1] = {
-      screen: Model.getObjectByName("monitor_2_screen"),
-      light: Model.getObjectByName("monitor_bar_light_light_2"),
-      lightHelper: null,
-      worldPosition: new Vector3(),
-      worldScale: new Vector3(),
-      worldQuaternion: new Quaternion(),
-    };
+/**
+ * Tracks the current timeline phase and fires onTypingChange
+ * only when the typing state actually flips.
+ */
+function createTimelineTracker({ onTypingChange }) {
+  let currentPhase = "";
+  let isTyping = false;
 
-    const AppleLogo = Model.getObjectByName("apple_logo_plane");
+  return function update(time) {
+    const phase = getTimelinePhase(time);
 
-    // --------------------------------------------------------
-    // DEBUG
-    // --------------------------------------------------------
+    if (phase.name === currentPhase) return;
+    currentPhase = phase.name;
 
-    // --------------------------------------------------------
-    // MODEL MATERIALS
-    // --------------------------------------------------------
-    Model.traverse((Node) => {
-      if (!Node.isMesh) return;
+    const typing = Boolean(phase.typing);
 
-      // ----------------------------------------------------
-      // DESK FOCUS SPHERE
-      // ----------------------------------------------------
+    if (typing !== isTyping) {
+      isTyping = typing;
+      onTypingChange(isTyping);
+    }
+  };
+}
 
-      if (Node.name === "desk_focus_sphere") {
-        Node.material = new MeshBasicMaterial({
-          color: "purple",
-        });
+// ============================================================
+// MAIN
+// ============================================================
 
-        DeskFocusSphere = Node;
+const canvas = document.querySelector("canvas");
+const gui = new GUI();
 
-        return;
-      }
+const renderer = createRenderer(canvas);
+const stats = createStats();
+const scene = new Scene();
+const camera = createCamera();
 
-      Node.material = StanMat;
+createControls(camera, canvas);
+GetSceneBounds(renderer, camera);
 
-      Node.material = Materials[Node.name] || Node.material;
+scene.background = new Color("#0a0a0a");
+addColorControl(gui, scene, "background", "Scene Background");
 
-      if (Node.name.includes("keyboard_key")) {
-        Node.material = Materials.keyboard_key;
-      }
+// ---- Assets ------------------------------------------------
 
-      // ----------------------------------------------------
-      // NORMAL MESH
-      // ----------------------------------------------------
+const loaders = createLoaders();
+const appleLogoTexture = loaders.texture.load("/textures/applelogo.png");
+const inkMap = loaders.texture.load("/textures/ink.jpg");
+const scratchNoiseTexture = loaders.texture.load("/textures/noise_scratch.png");
 
-      Node.castShadow = true;
+const testObjects = createTestObjects(inkMap);
+scene.add(...testObjects.all);
 
-      Node.receiveShadow = true;
-    });
-
-    AppleLogo.material.uniforms.uMap.value = AppleLogoTexture;
-    const scale = 0.1;
-    AppleLogo.scale.set(scale, scale, scale);
-
-    // --------------------------------------------------------
-    // ADD MODEL BEFORE WORLD-SPACE CALCULATIONS
-    // --------------------------------------------------------
-
-    scene.add(Model);
-
-    // --------------------------------------------------------
-    // UPDATE MODEL MATRICES
-    // --------------------------------------------------------
-
-    Model.updateMatrixWorld(true);
-
-    // --------------------------------------------------------
-    // SETUP LIGHTS
-    // --------------------------------------------------------
-
-    SetupLights(Model);
-  },
-);
-
-// Audio System;
+// ---- Audio -------------------------------------------------
 
 const howl = CreateAudio();
+howl.setVolumes(0, 0);
 
-// howl.play()
-
-// ============================================================
-// POST PROCESSING
-// ============================================================
-
-let Postprocessing = {
-  enabled: true,
-};
-
-pane.addBinding(Postprocessing, "enabled", {
-  label: "Sketch Shader",
+const updateTimeline = createTimelineTracker({
+  onTypingChange: (isTyping) => {
+    howl.setVolumes(isTyping ? TYPING_VOLUME : 0, isTyping ? TYPING_VOLUME : 0);
+  },
 });
 
-const composer = new EffectComposer(renderer);
+// ---- Post-processing --------------------------------------
 
+const postprocessing = { enabled: true };
+gui.add(postprocessing, "enabled").name("Sketch Shader");
+
+const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
 
-const ToonPass = GetToonPass(composer, pane, ScratchNoiseTexture);
+const toonPass = GetToonPass(composer, gui, scratchNoiseTexture);
 
-// ============================================================
-// CLOCK
-// ============================================================
+// ---- Scene model ------------------------------------------
+
+let character = null;
+
+loaders.gltf.load("/models/scene.glb", (glb) => {
+  const model = glb.scene;
+
+  character = createCharacterAnimation(glb);
+
+  applyModelMaterials(model);
+
+  const appleLogo = model.getObjectByName("apple_logo_plane");
+  appleLogo.material.uniforms.uMap.value = appleLogoTexture;
+  appleLogo.scale.setScalar(0.1);
+
+  // Must be in the scene before world-space calculations
+  scene.add(model);
+  model.updateMatrixWorld(true);
+
+  setupDirectionalLight(model, scene, gui);
+  setupMonitorLights(model, scene, gui);
+});
+
+// ---- Render loop ------------------------------------------
 
 const clock = new Clock();
 
-let PreviousTime = clock.getElapsedTime();
-
-// ============================================================
-// ANIMATION
-// ============================================================
-
-const CodingAnimationDuration = 9;
-let Time = 0;
-let TargetKeyboardVolume = 1;
-let KeyboardVolume = 1;
-
-function Animate() {
+function animate() {
   stats.begin();
 
-  // ----------------------------------------------------------
-  // TIME
-  // ----------------------------------------------------------
+  const dt = clock.getDelta();
 
-  const CurrentTime = clock.getElapsedTime();
+  testObjects.pot.rotation.y += dt;
+  testObjects.torus.rotation.x += dt;
+  testObjects.torus.rotation.y += dt;
 
-  const DT = CurrentTime - PreviousTime;
+  if (character) {
+    updateTimeline(character.codingAction.time);
+    character.mixer.update(dt);
+  }
 
-
-  PreviousTime = CurrentTime;
-
-  // ----------------------------------------------------------
-  // TEST ANIMATION
-  // ----------------------------------------------------------
-
-  Pot.rotation.y += DT;
-
-  Torus.rotation.x += DT;
-
-  Torus.rotation.y += DT;
-
-  // ----------------------------------------------------------
-  // CAPTURE NORMALS
-  // ----------------------------------------------------------
-
-  const SceneNormalTexture = CaptureNormals(
+  const normalTexture = CaptureNormals(
     scene,
     camera,
     renderer,
-    innerWidth,
-    innerHeight,
+    window.innerWidth,
+    window.innerHeight,
   );
 
-  // ----------------------------------------------------------
-  // TOON PASS
-  // ----------------------------------------------------------
+  toonPass.update(dt, normalTexture);
 
-  ToonPass.update(DT, SceneNormalTexture);
-
-  if (CharacterMixer) {
-    Time += DT;
-    Time %= CodingAnimationDuration;
-
-    if(Time <= CodingAnimationClip.time) {
-      TargetKeyboardVolume = 1;
-    } else {
-      TargetKeyboardVolume = 0;
-    }
-
-    CharacterMixer.update(DT);
-
-  }
-
-  KeyboardVolume += (TargetKeyboardVolume - KeyboardVolume) * .1;
-
-  if(KeyboardVolume <= 0.009) {
-    KeyboardVolume = 0;
-  } 
-  if(KeyboardVolume >= .99) {
-    KeyboardVolume = 0;
-  }
-
-  howl.volume(KeyboardVolume)
-
-  console.log(CodingAnimationClip)
-  
-
-  // ----------------------------------------------------------
-  // RENDER
-  // ----------------------------------------------------------
-
-  if (Postprocessing.enabled) {
-    composer.render(DT);
+  if (postprocessing.enabled) {
+    composer.render(dt);
   } else {
     renderer.render(scene, camera);
   }
 
-
-
   stats.end();
-
-  requestAnimationFrame(Animate);
+  requestAnimationFrame(animate);
 }
 
-requestAnimationFrame(Animate);
+requestAnimationFrame(animate);
 
-// ============================================================
-// RESIZE
-// ============================================================
+// ---- Resize ------------------------------------------------
 
-function Resize() {
-  const Width = window.innerWidth;
+window.addEventListener("resize", () => {
+  const { innerWidth: width, innerHeight: height } = window;
 
-  const Height = window.innerHeight;
-
-  camera.aspect = Width / Height;
-
+  camera.aspect = width / height;
   camera.updateProjectionMatrix();
 
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-
-  renderer.setSize(Width, Height);
-
-  composer.setSize(Width, Height);
-}
-
-window.addEventListener("resize", Resize);
+  renderer.setSize(width, height);
+  composer.setSize(width, height);
+});
